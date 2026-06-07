@@ -3,10 +3,12 @@
 BINARY_NAME=mcp-file-tools
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
+BUILD_FLAGS?=-trimpath -buildvcs=false
+CGO_ENABLED?=0
 
 ## build: Build the binary
 build:
-	go build $(LDFLAGS) -o $(BINARY_NAME) ./cmd/mcp-file-tools
+	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_NAME) ./cmd/mcp-file-tools
 
 ## test: Run tests
 test:
@@ -30,7 +32,7 @@ clean:
 
 ## install: Install binary to GOPATH/bin
 install:
-	go install $(LDFLAGS) ./cmd/mcp-file-tools
+	CGO_ENABLED=$(CGO_ENABLED) go install $(BUILD_FLAGS) $(LDFLAGS) ./cmd/mcp-file-tools
 
 ## run: Build and run
 run: build
@@ -43,12 +45,12 @@ tidy:
 ## build-all: Build for all platforms
 build-all:
 	mkdir -p dist
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-windows-amd64.exe ./cmd/mcp-file-tools
-	GOOS=windows GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-windows-arm64.exe ./cmd/mcp-file-tools
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 ./cmd/mcp-file-tools
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 ./cmd/mcp-file-tools
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-amd64 ./cmd/mcp-file-tools
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-arm64 ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_windows_amd64.exe ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_windows_arm64.exe ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_darwin_amd64 ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_darwin_arm64 ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_linux_amd64 ./cmd/mcp-file-tools
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(BUILD_FLAGS) $(LDFLAGS) -o dist/$(BINARY_NAME)_linux_arm64 ./cmd/mcp-file-tools
 
 ## help: Show this help
 help:

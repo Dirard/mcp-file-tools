@@ -7,14 +7,12 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
-      - 'server.json'
   pull_request:
     branches: [main, master]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
-      - 'server.json'
 
 jobs:
   build:
@@ -32,15 +30,17 @@ jobs:
         run: go mod tidy && git diff --exit-code go.mod go.sum
 
       - name: Build
-        run: go build -v ./cmd/mcp-file-tools
+        run: CGO_ENABLED=0 go build -trimpath -buildvcs=false -v ./cmd/mcp-file-tools
 
       - name: Build cross-platform
         run: |
           mkdir -p dist
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/mcp-file-tools-windows-amd64.exe ./cmd/mcp-file-tools
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/mcp-file-tools-linux-amd64 ./cmd/mcp-file-tools
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/mcp-file-tools-darwin-amd64 ./cmd/mcp-file-tools
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/mcp-file-tools-darwin-arm64 ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_windows_amd64.exe ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_windows_arm64.exe ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_linux_amd64 ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_linux_arm64 ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_darwin_amd64 ./cmd/mcp-file-tools
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o dist/mcp-file-tools_darwin_arm64 ./cmd/mcp-file-tools
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

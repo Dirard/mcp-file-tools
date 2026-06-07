@@ -21,6 +21,7 @@ vendor/
 
 # Build output
 dist/
+logs/
 
 # IDE
 .vscode/
@@ -43,9 +44,19 @@ Thumbs.db
 
 # Local settings
 .claude/
+.env
+.env.local
+.env.*
+!.env.example
+.envrc
+.direnv/
 
 # MCP Registry credentials
 .mcpregistry_*
+.mcpregistry*
 
 # MCP Publisher tool (built locally)
 mcp-publisher.exe
+mcp-publisher*
+checksums.txt
+tmp.json

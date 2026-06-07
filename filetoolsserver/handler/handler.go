@@ -1,24 +1,13 @@
 package handler
 
-import (
-	"os"
-	"sync"
-
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/security"
-)
-
-// Default permissions for new files and directories
-const (
-	DefaultFileMode os.FileMode = 0644
-	DefaultDirMode  os.FileMode = 0755
-)
+import "github.com/dimitar-grigorov/mcp-file-tools/internal/config"
 
 // Handler handles all file tool operations
 type Handler struct {
 	config      *config.Config
-	allowedDirs []string
-	mu          sync.RWMutex
+	limiters    handlerLimiters
+	pathLocks   *pathLockManager
+	cwdRegistry *cwdRegistry
 }
 
 // Option is a functional option for configuring Handler
@@ -33,54 +22,19 @@ func WithConfig(cfg *config.Config) Option {
 	}
 }
 
-// NewHandler creates a new Handler with allowed directories and optional configuration.
+// NewHandler creates a new Handler with optional configuration.
 // If no config is provided via WithConfig, default configuration is used.
-func NewHandler(allowedDirs []string, opts ...Option) *Handler {
+func NewHandler(opts ...Option) *Handler {
 	h := &Handler{
-		config:      config.Load(), // Load defaults from environment
-		allowedDirs: allowedDirs,
+		config:    config.Load(), // Load defaults from environment
+		pathLocks: newPathLockManager(),
 	}
 
 	for _, opt := range opts {
 		opt(h)
 	}
+	h.limiters = newHandlerLimiters(h.config)
+	h.cwdRegistry = newCwdRegistry(h.config)
 
 	return h
-}
-
-// GetAllowedDirectories returns a copy of the allowed directories.
-func (h *Handler) GetAllowedDirectories() []string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	dirs := make([]string, len(h.allowedDirs))
-	copy(dirs, h.allowedDirs)
-	return dirs
-}
-
-// ResolvedAllowedDirs returns allowed directories with symlinks resolved.
-func (h *Handler) ResolvedAllowedDirs() []string {
-	return security.ResolveAllowedDirs(h.GetAllowedDirectories())
-}
-
-// UpdateAllowedDirectories updates the allowed directories (for MCP Roots protocol)
-func (h *Handler) UpdateAllowedDirectories(newDirs []string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.allowedDirs = newDirs
-}
-
-// validatePath validates a path against allowed directories
-func (h *Handler) validatePath(path string) (string, error) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return security.ValidatePath(path, h.allowedDirs)
-}
-
-// getFileMode returns the file's current permissions, or DefaultFileMode if file doesn't exist.
-func getFileMode(path string) os.FileMode {
-	info, err := os.Stat(path)
-	if err != nil {
-		return DefaultFileMode
-	}
-	return info.Mode().Perm()
 }

@@ -123,7 +123,6 @@ func Detect(data []byte) DetectionResult {
 
 // DetectSample detects encoding by sampling beginning, middle, and end of data.
 // Returns the result and whether it should be trusted.
-// TODO: Make private or remove when grep.go and convert_encoding.go use streaming I/O.
 func DetectSample(data []byte) (DetectionResult, bool) {
 	size := len(data)
 

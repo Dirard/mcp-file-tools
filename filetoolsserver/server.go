@@ -1,49 +1,53 @@
 package filetoolsserver
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/dimitar-grigorov/mcp-file-tools/filetoolsserver/handler"
 	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Version is set at build time via ldflags
+// Version is set at build time via ldflags.
 var Version = "dev"
 
-// Server instructions for AI assistants
-const serverInstructions = `MCP filesystem server with non-UTF-8 encoding support (22 encodings: CP1251, KOI8-R, ISO-8859-x, etc).
+// Server instructions for AI assistants.
+const serverInstructions = `MCP filesystem server with fourteen tools: structured JSON output for each call.
 
-PREFER THESE TOOLS over built-in Read/Write/Grep for file operations when encoding matters:
-- read_text_file: auto-detects encoding, returns UTF-8. Use offset/limit for files >2000 lines.
-- write_file: converts UTF-8 content to target encoding (default: cp1251)
-- edit_file: in-place edits with encoding support, returns unified diff. Use dryRun=true to preview changes before applying.
-- grep_text_files: encoding-aware regex search across files
-- detect_encoding: diagnose encoding issues (garbled text, � characters)
+Tools: set_cwd, read_file, read_files, outline_file, resolve_symbol_range, copy_ranges, move_ranges, copy_ranges_batch, move_ranges_batch, list_dir, glob_file_search, grep, inspect_path, workspace_inventory.
 
-Workflow for non-UTF-8 files:
-1. detect_encoding - identify file encoding
-2. read_text_file or edit_file - read/modify with correct encoding
-3. write_file with encoding param - preserves original encoding
+High-value flow: set_cwd once, discover with workspace_inventory/glob_file_search/grep, inspect with read_file/read_files/outline_file, resolve selectors with resolve_symbol_range, then use copy_ranges/move_ranges dry_run before mutation.
 
-If "no allowed directories configured" error: add directory paths as args in .mcp.json.
+grep supports literal/regex search and returns search_stats plus file_groups with read_ranges and next_recommended_call hints.
 
-IMPORTANT: Call check_for_updates once at the start of each session. If an update is available, inform the user before proceeding.`
+Path tools accept absolute paths by default. With cwd_id, path inputs are cwd-relative and outputs include cwd metadata.
 
-// Helper for bool pointers (DestructiveHint defaults to true, so we need explicit false)
+outline_file is parser-backed for Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, JSON, YAML, and Svelte where supported. It returns fingerprint, imports/symbols/sections/enclosing_items and exact selectors. Default agent profile keeps TSX/JS/TS and JSON/YAML high-signal; full profile exposes local variables and config values.
+
+workspace_inventory is directory-only: page completeness is continuation.page_complete, while summary/tree coverage is summary.summary_coverage_complete, summary.tree_scan_complete, summary.summary_incomplete_reason, and summary.scan_scope.
+
+resolve_symbol_range can return recommended_write_call as dry-run-only copy/move input when selector and target safety are proven.
+
+Range tools return diff_previews, boundary_preview, boundary_warnings, joiner_effect diagnostics, validation read-back, optional sidecar backups, and partial_state on recovery paths. Previews are bounded display text; verify escape-sensitive edits with validation/read_file. read_files, grep, and write previews default redaction_mode to off; strict is explicit opt-in.`
+
+// Helper for bool pointers (OpenWorldHint needs a pointer).
 func boolPtr(b bool) *bool {
 	return &b
 }
 
-// NewServer creates a new MCP server with all file tools registered.
+// NewServer creates a new MCP server with the public file tools registered.
 // If logger is nil, logging middleware is disabled but recovery is still active.
 // If cfg is nil, configuration is loaded from environment variables.
-func NewServer(allowedDirs []string, logger *slog.Logger, cfg *config.Config) *mcp.Server {
+func NewServer(logger *slog.Logger, cfg *config.Config) *mcp.Server {
 	var handlerOpts []handler.Option
 	if cfg != nil {
 		handlerOpts = append(handlerOpts, handler.WithConfig(cfg))
 	}
-	h := handler.NewHandler(allowedDirs, handlerOpts...)
+	h := handler.NewHandler(handlerOpts...)
 
 	impl := &mcp.Implementation{
 		Name:    "mcp-file-tools",
@@ -51,258 +55,286 @@ func NewServer(allowedDirs []string, logger *slog.Logger, cfg *config.Config) *m
 	}
 
 	serverOpts := &mcp.ServerOptions{
-		Instructions:            serverInstructions,
-		Logger:                  logger,
-		InitializedHandler:      createInitializedHandler(h),
-		RootsListChangedHandler: createRootsListChangedHandler(h),
+		Instructions: serverInstructions,
+		Logger:       logger,
 	}
 	server := mcp.NewServer(impl, serverOpts)
 
-	// Register all tools using the new AddTool API with annotations
-	// All handlers are wrapped with recovery middleware (and logging if logger is provided)
+	setCwdDescription := `Register one absolute directory and get a small cwd_id for cwd-relative calls. Success output is exactly cwd_id. Params: directory.`
 
-	// Read-only tools
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "read_text_file",
-		Description: "Read file with encoding auto-detection, converts to UTF-8. PREFER THIS over built-in Read for non-UTF-8 files (Cyrillic, legacy codebases). For files >2000 lines, use offset/limit to paginate. Returns totalLines and fileSizeBytes for planning subsequent reads. Use maxCharacters to cap output size and prevent token overflow. Parameters: path (required), encoding (optional, auto-detected), offset (1-indexed start line), limit (max lines to return), maxCharacters (optional, truncates content).",
+	addStructuredToolWithOutputSchema(server, &mcp.Tool{
+		Name:        "set_cwd",
+		Description: setCwdDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "Read Text File",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Set CWD",
+			ReadOnlyHint:   false,
+			IdempotentHint: false,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "read_text_file", h.HandleReadTextFile))
+	}, logger, "set_cwd", h.HandleSetCwd, h, handler.SetCwdOutputSchema())
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "read_multiple_files",
-		Description: "Read multiple files concurrently with encoding support. PREFER THIS when reading several non-UTF-8 files at once. Individual failures don't stop the batch — partial results are returned. Parameters: paths (required array), encoding (optional, auto-detected per file).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "Read Multiple Files",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "read_multiple_files", h.HandleReadMultipleFiles))
+	readFileDescription := `Read one known file or 1-based line range. Returns compact line-numbered text plus file/range/total_lines/coverage/continuation metadata. Params: target_file, start_line, end_line, chunk_lines, count_total_lines, expected_version.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_directory",
-		Description: "List files and directories with optional glob pattern filtering (e.g., *.pas, *.dfm). Parameters: path (required), pattern (optional, default: *).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "read_file",
+		Description: readFileDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "List Directory",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Read File",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "list_directory", h.HandleListDirectory))
+	}, logger, "read_file", h.HandleReadFile, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_encodings",
-		Description: "List all 22 supported encodings with name, aliases, and description. Use this to find the correct encoding name for read/write/convert operations.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "List Encodings",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "list_encodings", h.HandleListEncodings))
+	readFilesDescription := `Batch-read known files/ranges with per-item status, complete-line budgets, coverage, continuation, and literal output by default. redaction_mode defaults off; strict is opt-in. Params: items, max_total_lines, max_total_bytes, count_total_lines, redaction_mode.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "detect_encoding",
-		Description: "Auto-detect file encoding with confidence score (0-100) and BOM detection. ALWAYS use this first when encountering garbled text or � characters. Use before read_text_file to determine the correct encoding. Parameters: path (required), mode (sample=fast default, chunked=thorough, full=entire file).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "read_files",
+		Description: readFilesDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "Detect Encoding",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Read Files",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "detect_encoding", h.HandleDetectEncoding))
+	}, logger, "read_files", h.HandleReadFiles, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "grep_text_files",
-		Description: "Regex search in file contents with encoding support. PREFER THIS over built-in Grep when searching non-UTF-8 files or when encoding-aware matching is needed. Parameters: pattern (required regex), paths (required array of files/dirs), caseSensitive (default: true), contextBefore/After (lines), maxMatches (default 1000), include/exclude (globs), encoding.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "Grep Text Files",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "grep_text_files", h.HandleGrep))
+	outlineFileDescription := `Inspect one file as a compact structure outline plus fingerprint. Parser-backed languages: Markdown, Go, JS/JSX, TS/TSX, Python, Java, JSON, YAML, Svelte. Default agent profile hides TSX local variable noise and JSON/YAML value/wrapper noise while keeping key paths; full/filters/enclosing_line expose details. Returns selectors, stats, and next calls.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_allowed_directories",
-		Description: "Returns the list of directories this server is allowed to access. Subdirectories are also accessible. If empty, user needs to add directory paths as args in .mcp.json.",
+	addStructuredToolWithOutputSchema(server, &mcp.Tool{
+		Name:        "outline_file",
+		Description: outlineFileDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "List Allowed Directories",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Outline File",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "list_allowed_directories", h.HandleListAllowedDirectories))
+	}, logger, "outline_file", h.HandleOutlineFile, h, handler.OutlineFileOutputSchema())
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_file_info",
-		Description: "Get file/directory metadata: size, timestamps, permissions, type. Use this to check file size before reading large files with read_text_file. Parameter: path (required).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "Get File Info",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "get_file_info", h.HandleGetFileInfo))
+	resolveSymbolRangeDescription := `Resolve an outline selector, kind/name/path, exact range+fingerprint, or enclosing_line to concrete ranges. With target_intent, returns dry-run copy/move recommendations when write safety is proven; never mutates. Params: source_file, source_fingerprint, selector, language, target_intent.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "directory_tree",
-		Description: "DEPRECATED: Use 'tree' instead (85% fewer tokens). Returns JSON tree structure for compatibility with mcp-js-servers. Parameters: path (required), excludePatterns (optional).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "resolve_symbol_range",
+		Description: resolveSymbolRangeDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "Directory Tree (JSON)",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Resolve Symbol Range",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "directory_tree", h.HandleDirectoryTree))
+	}, logger, "resolve_symbol_range", h.HandleResolveSymbolRange, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "tree",
-		Description: "Compact indented tree view of directory structure. Uses 85% fewer tokens than directory_tree — PREFER THIS for directory visualization. Set showEncoding=true to detect and display file encodings (e.g., for auditing legacy codebases). Parameters: path (required), maxDepth (0=unlimited), maxFiles (default 1000), dirsOnly (bool), exclude (array of patterns), showEncoding (bool, shows detected encoding per file).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "Tree (Compact)",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "tree", h.HandleTree))
+	copyRangesDescription := `Copy exact 1-based source ranges into one explicit target using fingerprints and placement. dry_run returns diff_previews, joiner_effect, boundary_preview/warnings, validation, and optional backup hints. Previews are bounded display text; verify escape-sensitive edits with read-back/read_file. joiner: none, single_newline, blank_line.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "search_files",
-		Description: "Recursively search for files matching a glob pattern (*.ext or **/*.ext). Returns full paths. Parameters: path (required), pattern (required), excludePatterns, maxResults (default 10000).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "copy_ranges",
+		Description: copyRangesDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:         "Search Files",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
+			Title:          "Copy Ranges",
+			ReadOnlyHint:   false,
+			IdempotentHint: false,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "search_files", h.HandleSearchFiles))
+	}, logger, "copy_ranges", h.HandleCopyRanges, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "detect_line_endings",
-		Description: "Detect line ending style (crlf/lf/mixed/none) and find inconsistent lines. Useful for diagnosing mixed line ending issues in cross-platform legacy codebases. Returns dominant style, total lines, and line numbers with minority endings. Parameter: path (required).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:         "Detect Line Endings",
-			ReadOnlyHint:  true,
-			OpenWorldHint: boolPtr(false),
-		},
-	}, handler.Wrap(logger, "detect_line_endings", h.HandleDetectLineEndings))
+	moveRangesDescription := `Move exact source ranges into one explicit target, then remove them from source after target write and source recheck. Same shape as copy_ranges; returns target/source previews, validation, backups, and partial_state on recovery paths. Verify escape-sensitive edits with read-back/read_file.`
 
-	// Write tools
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "manage_bom",
-		Description: "Detect, strip, or add Unicode BOM (Byte Order Mark). UTF-8 BOM breaks PHP/shell scripts; UTF-16 files need BOMs. Parameters: path (required), action (required: \"detect\"|\"strip\"|\"add\"), encoding (required for \"add\": utf-8, utf-16-le, utf-16-be, utf-32-le, utf-32-be).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "move_ranges",
+		Description: moveRangesDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:           "Manage BOM",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
+			Title:          "Move Ranges",
+			ReadOnlyHint:   false,
+			IdempotentHint: false,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "manage_bom", h.HandleManageBom))
+	}, logger, "move_ranges", h.HandleMoveRanges, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "change_line_endings",
-		Description: "Convert line endings in a file to LF or CRLF. Use after detect_line_endings to fix mixed or wrong line endings. Returns original style, new style, and number of lines changed. No-op if file already uses the target style. Parameters: path (required), style (required: \"lf\" or \"crlf\").",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Change Line Endings",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
-		},
-	}, handler.Wrap(logger, "change_line_endings", h.HandleChangeLineEndings))
+	copyRangesBatchDescription := `Copy exact ranges from one source snapshot into multiple explicit targets. Per target: placement, ranges, joiner, backup, diff_previews, joiner_effect, validation. dry_run plans without mutation. Params: source_file, source_fingerprint, targets, dry_run.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "create_directory",
-		Description: "Create a directory recursively (mkdir -p). Succeeds silently if already exists. Parameter: path (required).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "copy_ranges_batch",
+		Description: copyRangesBatchDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:           "Create Directory",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(false),
-			OpenWorldHint:   boolPtr(false),
+			Title:          "Copy Ranges Batch",
+			ReadOnlyHint:   false,
+			IdempotentHint: false,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "create_directory", h.HandleCreateDirectory))
+	}, logger, "copy_ranges_batch", h.HandleCopyRangesBatch, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "write_file",
-		Description: "Write file with encoding conversion from UTF-8. PREFER THIS over built-in Write for non-UTF-8 files — converts UTF-8 content to target encoding, preserving legacy compatibility. Parameters: path (required), content (required), encoding (default: cp1251). Use after read_text_file to preserve original encoding.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Write File",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
-		},
-	}, handler.Wrap(logger, "write_file", h.HandleWriteFile))
+	moveRangesBatchDescription := `Move ranges from one source snapshot into multiple explicit targets, then remove the union from source once. Target writes happen before source rewrite; source_diff_previews/source_validation describe removal. Params: source_file, source_fingerprint, targets, source_backup, dry_run.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "move_file",
-		Description: "Move or rename files/directories. Fails if destination exists. Parameters: source (required), destination (required).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "move_ranges_batch",
+		Description: moveRangesBatchDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:           "Move File",
-			ReadOnlyHint:    false,
-			IdempotentHint:  false,
-			DestructiveHint: boolPtr(false),
-			OpenWorldHint:   boolPtr(false),
+			Title:          "Move Ranges Batch",
+			ReadOnlyHint:   false,
+			IdempotentHint: false,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "move_file", h.HandleMoveFile))
+	}, logger, "move_ranges_batch", h.HandleMoveRangesBatch, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "copy_file",
-		Description: "Copy a file. Fails if destination exists. Parameters: source (required), destination (required).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Copy File",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(false),
-			OpenWorldHint:   boolPtr(false),
-		},
-	}, handler.Wrap(logger, "copy_file", h.HandleCopyFile))
+	listDirDescription := `List direct children of one directory, non-recursive. Returns entries{name,kind}, counts, hidden/VCS skip counters, and ignore_globs behavior. Use glob_file_search for recursive file discovery. Params: target_directory, ignore_globs, include_hidden, include_vcs_metadata.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "delete_file",
-		Description: "Delete a file. Does not delete directories. Parameter: path (required).",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "list_dir",
+		Description: listDirDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:           "Delete File",
-			ReadOnlyHint:    false,
-			IdempotentHint:  false,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
+			Title:          "List Directory",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "delete_file", h.HandleDeleteFile))
+	}, logger, "list_dir", h.HandleListDir, h)
 
-	// WrapContentOnly: returns readable diff text instead of StructuredContent JSON.
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "edit_file",
-		Description: "Replace text in a file with whitespace-flexible matching. Returns unified diff. Supports non-UTF-8 via encoding param. " +
-			"In 'ask before edits' mode: ALWAYS call with dryRun=true first, show the diff, then dryRun=false after user confirms. " +
-			"With auto-edit permissions: call directly with dryRun=false. " +
-			"Parameters: path, edits [{oldText, newText}], dryRun (false), encoding (auto).",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Edit File",
-			ReadOnlyHint:    false,
-			IdempotentHint:  false,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
-		},
-	}, handler.WrapContentOnly(logger, "edit_file", h.HandleEditFile))
+	globDescription := `Recursively find files by glob pattern under one directory. Supports **, simple brace patterns, sort, limit, continuation_after, hidden/VCS flags, ignore_globs, groups, and next read/outline calls for narrow complete results. Params: target_directory, glob_pattern, sort, limit, continuation_after, ignore_globs, include_hidden, include_vcs_metadata.`
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "convert_encoding",
-		Description: "Convert file from one encoding to another. Use after detect_encoding to identify the source. Parameters: path (required), from (source encoding, auto-detected if omitted), to (target encoding, required), backup (create .bak file before converting, default: false). IMPORTANT: Use backup=true for irreversible conversions.",
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "glob_file_search",
+		Description: globDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:           "Convert Encoding",
-			ReadOnlyHint:    false,
-			IdempotentHint:  true,
-			DestructiveHint: boolPtr(true),
-			OpenWorldHint:   boolPtr(false),
+			Title:          "Glob File Search",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "convert_encoding", h.HandleConvertEncoding))
+	}, logger, "glob_file_search", h.HandleGlobFileSearch, h)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "check_for_updates",
-		Description: "Check if a newer version of mcp-file-tools is available. Returns current version, latest version, and update instructions if outdated. Uses cached result (max 1 GitHub API call per 2h). Call once at the start of each session.",
+	grepDescription := `Search file contents with literal or regex patterns and MCP-native output. Returns matches/files/counts, search_stats, file_groups with read_ranges, and schema-valid read/outline next calls for narrow complete results. redaction_mode defaults off; include_vcs_metadata is unsupported for content traversal. Params: pattern, path, pattern_mode, output_mode, context/before/after, case_insensitive, type, glob, ignore_globs, multiline, line_window, max_matches_per_file, limit.`
+
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "grep",
+		Description: grepDescription,
 		Annotations: &mcp.ToolAnnotations{
-			Title:        "Check for Updates",
-			ReadOnlyHint: true,
+			Title:          "Grep",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
 		},
-	}, handler.Wrap(logger, "check_for_updates", handler.NewCheckUpdateHandler(Version)))
+	}, logger, "grep", h.HandleGrepTool, h)
+
+	inspectPathDescription := `Inspect one filesystem path without reading full content. Returns exists/kind, size/timestamps/mode, text line_count, shallow directory counts, symlink metadata, binary/encoding hints, mime_hint, and discovery_context. Params: target_path.`
+
+	addStructuredTool(server, &mcp.Tool{
+		Name:        "inspect_path",
+		Description: inspectPathDescription,
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Inspect Path",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
+		},
+	}, logger, "inspect_path", h.HandleInspectPath, h)
+
+	workspaceInventoryDescription := `Build a directories-only project inventory: root, directories_page, summary, continuation, counters, and glob hints. Does not list file names. page_complete is page status; summary_coverage_complete/tree_scan_complete/reason/scan_scope are coverage status. Params: target_directory, max_depth, limit, ignore_globs, include_hidden, include_vcs_metadata, include_summary, summary_profile, continuation_after.`
+
+	addStructuredToolWithOutputSchema(server, &mcp.Tool{
+		Name:        "workspace_inventory",
+		Description: workspaceInventoryDescription,
+		Annotations: &mcp.ToolAnnotations{
+			Title:          "Workspace Inventory",
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+			OpenWorldHint:  boolPtr(false),
+		},
+	}, logger, "workspace_inventory", h.HandleWorkspaceInventory, h, handler.WorkspaceInventoryOutputSchema())
 
 	return server
+}
+
+func addStructuredTool[In, Out any](server *mcp.Server, tool *mcp.Tool, logger *slog.Logger, toolName string, toolHandler mcp.ToolHandlerFor[In, Out], owner *handler.Handler) {
+	addStructuredToolWithOutputSchema(server, tool, logger, toolName, toolHandler, owner, nil)
+}
+
+func addStructuredToolWithOutputSchema[In, Out any](server *mcp.Server, tool *mcp.Tool, logger *slog.Logger, toolName string, toolHandler mcp.ToolHandlerFor[In, Out], owner *handler.Handler, outputSchema *jsonschema.Schema) {
+	inputSchema, err := jsonschema.For[In](nil)
+	if err != nil {
+		panic(fmt.Errorf("input schema for %s: %w", toolName, err))
+	}
+	if outputSchema == nil {
+		outputSchema, err = jsonschema.For[Out](nil)
+		if err != nil {
+			panic(fmt.Errorf("output schema for %s: %w", toolName, err))
+		}
+	}
+	handler.ApplyToolInputSchemaConstraints(inputSchema, toolName)
+	handler.ApplyPathOutputSchemaConstraints(outputSchema)
+	tool.InputSchema = inputSchema
+	tool.OutputSchema = outputSchema
+
+	wrapped := handler.Wrap(logger, toolName, toolHandler)
+	server.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var input In
+		var decodedCwdID handler.CwdIDInput
+		var requestPathCtx handler.PathContext
+		hasRequestPathCtx := false
+		setter, supportsCwdID := any(&input).(handler.CwdIDSetter)
+		if req != nil && req.Params.Arguments != nil && len(req.Params.Arguments) > 0 {
+			if supportsCwdID {
+				cwdID, cwdErr := handler.DecodeCwdIDFromRaw(req.Params.Arguments)
+				if cwdErr != nil {
+					return &mcp.CallToolResult{
+						Content:           []mcp.Content{},
+						StructuredContent: handler.StructuredCwdErrorOutput[Out](cwdErr),
+						IsError:           true,
+					}, nil
+				}
+				decodedCwdID = cwdID
+				if decodedCwdID.Present {
+					pathCtx, cwdErr := owner.BuildPathContext(decodedCwdID)
+					if cwdErr != nil {
+						return &mcp.CallToolResult{
+							Content:           []mcp.Content{},
+							StructuredContent: handler.StructuredCwdErrorOutput[Out](cwdErr),
+							IsError:           true,
+						}, nil
+					}
+					requestPathCtx = pathCtx
+					hasRequestPathCtx = true
+					decodedCwdID.PathContext = &requestPathCtx
+				}
+			}
+			if err := json.Unmarshal(req.Params.Arguments, &input); err != nil {
+				output := handler.StructuredErrorOutput[Out]("Invalid JSON arguments: " + err.Error())
+				if hasRequestPathCtx {
+					handler.AttachCwdOutputMeta(&output, requestPathCtx)
+				}
+				return &mcp.CallToolResult{
+					Content:           []mcp.Content{},
+					StructuredContent: output,
+					IsError:           true,
+				}, nil
+			}
+			if supportsCwdID {
+				setter.SetCwdID(decodedCwdID)
+			}
+		}
+
+		result, output, err := wrapped(ctx, req, input)
+		if err != nil {
+			output := handler.StructuredErrorOutput[Out](err.Error())
+			if hasRequestPathCtx {
+				handler.AttachCwdOutputMeta(&output, requestPathCtx)
+			}
+			return &mcp.CallToolResult{
+				Content:           []mcp.Content{},
+				StructuredContent: output,
+				IsError:           true,
+			}, nil
+		}
+		if result == nil {
+			result = &mcp.CallToolResult{}
+		}
+		if result.Content == nil {
+			result.Content = []mcp.Content{}
+		}
+		if hasRequestPathCtx {
+			handler.AttachCwdOutputMeta(&output, requestPathCtx)
+		}
+		result.StructuredContent = output
+		return result, nil
+	})
 }

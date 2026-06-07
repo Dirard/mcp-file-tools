@@ -10,6 +10,9 @@ builds:
     binary: mcp-file-tools
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
     goos:
       - linux
       - windows
@@ -59,7 +62,7 @@ release:
 # mcp:
 #   name: io.github.dimitar-grigorov/mcp-file-tools
 #   title: MCP File Tools
-#   description: "MCP server for reading/writing legacy-encoded files (CP1251, Windows-1251, etc.)"
+#   description: "Read-only MCP file tools with complete single-response tool-specific JSON output"
 #   homepage: https://github.com/dimitar-grigorov/mcp-file-tools
 #   repository:
 #     url: https://github.com/dimitar-grigorov/mcp-file-tools

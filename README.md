@@ -1,350 +1,185 @@
 # MCP File Tools
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/dimitar-grigorov/mcp-file-tools)](https://goreportcard.com/report/github.com/dimitar-grigorov/mcp-file-tools)
-[![Release](https://img.shields.io/github/v/release/dimitar-grigorov/mcp-file-tools)](https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest)
-[![License: GPL-3.0](https://img.shields.io/github/license/dimitar-grigorov/mcp-file-tools)](LICENSE)
-[![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io/?search=mcp-file-tools)
+Cross-platform MCP filesystem tools for Codex. The public surface is intentionally small and agent-oriented:
 
-Claude sees `Настройки` — not `????` or `Íàñòðîéêè`.
+- [`set_cwd`](TOOLS.md#set_cwd) - register one absolute directory and receive a small `cwd_id`
+- [`read_file`](TOOLS.md#read_file) - read one file or line range with line numbers
+- [`read_files`](TOOLS.md#read_files) - batch-read known files/ranges with continuation and coverage proof
+- [`outline_file`](TOOLS.md#outline_file) - inspect file structure and get a write-safe fingerprint
+- [`resolve_symbol_range`](TOOLS.md#resolve_symbol_range) - resolve outline selectors to concrete ranges and dry-run write hints
+- [`copy_ranges`](TOOLS.md#copy_ranges) - copy exact line ranges into one explicit target
+- [`move_ranges`](TOOLS.md#move_ranges) - move exact line ranges into one explicit target
+- [`copy_ranges_batch`](TOOLS.md#copy_ranges_batch) - copy ranges into multiple explicit targets
+- [`move_ranges_batch`](TOOLS.md#move_ranges_batch) - move ranges into multiple explicit targets
+- [`list_dir`](TOOLS.md#list_dir) - list direct directory children
+- [`glob_file_search`](TOOLS.md#glob_file_search) - recursively find files by glob pattern
+- [`grep`](TOOLS.md#grep) - agent-friendly search with stats, grouped ranges, and next-call hints
+- [`inspect_path`](TOOLS.md#inspect_path) - inspect useful metadata for one path
+- [`workspace_inventory`](TOOLS.md#workspace_inventory) - build a directories-only project map
 
-MCP server for file operations with non-UTF-8 encoding support. Auto-detects and converts 22 encodings (Cyrillic, Windows-125x, ISO-8859, KOI8, UTF-16) so AI assistants can read and write legacy files without corrupting data.
+The tools are adapted from the `mr-agent` file discovery/search tools, with local filesystem access and complete single-response MCP output. The same server works on Windows, Linux, and macOS; paths are resolved by the OS where the MCP server runs. By default, path inputs must be absolute paths for that server OS and path outputs are slash-normalized absolute/display paths such as `D:/ai-apps/mcp-file-tools/README.md`. Agents can call `set_cwd` once with an absolute directory, receive a small integer `cwd_id`, and then pass cwd-relative paths with that `cwd_id`; in cwd mode, successful outputs include absolute `cwd` metadata and all other filesystem path fields are relative to that cwd. `read_file` and `read_files` provide line-numbered content with chunk continuation and coverage metadata. `outline_file` gives agents compact Markdown/Go/JS/TS/TSX/Python/Java/JSON/YAML/Svelte structure, generic text chunks for ordinary text files, selector metadata, and stable fingerprints before write operations; JSON/YAML config nodes are exact for navigation but conservative for writes, and Svelte nested script symbols are explicitly partial/future-gated. `resolve_symbol_range` turns selectors or enclosing lines into concrete ranges and can produce dry-run-only `copy_ranges`/`move_ranges` recommendations when write safety is proven. `copy_ranges`/`move_ranges` and their batch variants use fingerprints, explicit targets, `dry_run`, bounded unified diff previews, joiner/boundary diagnostics, post-write read-back validation, optional sidecar backups, backup rediscovery hints, and structured partial-state recovery for fast mechanical refactors. `glob_file_search` supports sort/continuation and hidden/VCS discovery flags; `grep` supports literal or regex pattern mode, ripgrep-like output modes, JSON-native context fields, type/glob filters, multiline search, `search_stats`, `file_groups` with `read_ranges`, safe hidden traversal, redaction modes, and `next_recommended_call`, and defaults to `limit=50`; `inspect_path` and `workspace_inventory` provide cheap metadata, discovery visibility context, flattened directory pages with `continuation_after`, and summaries without listing every file name. All tools return friendly validation/no-result messages.
 
-**Perfect for:** Delphi/Pascal projects, legacy VB6 apps, old PHP/HTML sites, config files with non-UTF-8 text.
+Every successful tool returns the complete result as tool-specific structured JSON. Metadata is exposed as JSON fields instead of being embedded in formatted text: read tools return paths, line ranges, coverage and continuation; `outline_file` returns `fingerprint`, `imports`, `symbols`, `sections`, `enclosing_items`, warnings, selectors, and recommended next calls; `resolve_symbol_range` returns matches, resolved ranges, read hints, write refusal reasons, and dry-run write hints when safe; range tools return operation status, fingerprints for the next safe write, previews, validation, backups, warnings, and partial state when needed; discovery tools return counters, skip stats, groups/pages/summaries, and optional next calls. There is no opaque `cursor` input and no `nextCursor` field.
 
-## What It Does
+Tool errors are structured for agents: the MCP result is marked `isError=true`, plain text content is empty, and the actionable message is returned in the structured `error` field instead of duplicated as plain text content.
 
-Provides 21 tools for file operations with automatic encoding conversion:
-- [`read_text_file`](TOOLS.md#read_text_file) - Read files with encoding auto-detection and conversion
-- [`read_multiple_files`](TOOLS.md#read_multiple_files) - Read multiple files concurrently with encoding support
-- [`write_file`](TOOLS.md#write_file) - Write files in specific encodings
-- [`edit_file`](TOOLS.md#edit_file) - Line-based edits with diff preview and whitespace-flexible matching
-- [`copy_file`](TOOLS.md#copy_file) - Copy a file to a new location
-- [`delete_file`](TOOLS.md#delete_file) - Delete a file
-- [`list_directory`](TOOLS.md#list_directory) - Browse directories with pattern filtering
-- [`tree`](TOOLS.md#tree) - Compact indented tree view (85% fewer tokens than JSON)
-- [`directory_tree`](TOOLS.md#directory_tree-deprecated) - Get recursive tree view as JSON (deprecated, use `tree`)
-- [`search_files`](TOOLS.md#search_files) - Recursively search for files matching glob patterns
-- [`grep_text_files`](TOOLS.md#grep_text_files) - Regex search in file contents with encoding support
-- [`detect_encoding`](TOOLS.md#detect_encoding) - Auto-detect file encoding with confidence score
-- [`convert_encoding`](TOOLS.md#convert_encoding) - Convert file between encodings
-- [`detect_line_endings`](TOOLS.md#detect_line_endings) - Detect line ending style (CRLF/LF/mixed)
-- [`change_line_endings`](TOOLS.md#change_line_endings) - Convert line endings to LF or CRLF
-- [`manage_bom`](TOOLS.md#manage_bom) - Detect, strip, or add Unicode BOM
-- [`list_encodings`](TOOLS.md#list_encodings) - Show all supported encodings
-- [`get_file_info`](TOOLS.md#get_file_info) - Get file/directory metadata
-- [`create_directory`](TOOLS.md#create_directory) - Create directories recursively (mkdir -p)
-- [`move_file`](TOOLS.md#move_file) - Move or rename files and directories
-- [`list_allowed_directories`](TOOLS.md#list_allowed_directories) - Show accessible directories
+`read_file` accepts `start_line`/`end_line` as source line-range selectors, so agents can jump directly to a known part of a large file. When both range bounds are set, `read_file` avoids a full pre-scan; if EOF is not reached, `total_lines_known` is false and `total_lines` is omitted. A start line beyond EOF returns a structured error with known `total_lines` instead of a silent empty success. For mechanical refactors, use `outline_file` to get line ranges and `source_fingerprint`, run range tools with `dry_run=true`, then apply with the returned next-write fingerprints.
 
-**Supported encodings (22 total):**
-- **Unicode:** UTF-8, UTF-16 LE, UTF-16 BE (with BOM detection for UTF-16 and UTF-32)
-- **Cyrillic:** Windows-1251, KOI8-R, KOI8-U, CP866, ISO-8859-5
-- **Western European:** Windows-1252, ISO-8859-1, ISO-8859-15
-- **Central European:** Windows-1250, ISO-8859-2
-- **Greek:** Windows-1253, ISO-8859-7
-- **Turkish:** Windows-1254, ISO-8859-9
-- **Other:** Hebrew (1255), Arabic (1256), Baltic (1257), Vietnamese (1258), Thai (874)
+## Agent Workflow
 
-See [TOOLS.md](TOOLS.md) for detailed parameters and examples.
+The high-value path is: call `set_cwd`, search with `grep` or `glob_file_search`, follow their bounded `read_file`/`read_files` or `outline_file` recommendations, use `outline_file` with default `output_profile="agent"`, pass selectors to `resolve_symbol_range` with an explicit `target_intent`, run the returned dry-run write call, then apply only after preview/read-back looks right. For escape-sensitive code such as regexes or string literals, treat diff/boundary previews as display previews and verify with post-write read-back or an explicit `read_file`.
 
-**Security:** All operations restricted to allowed directories only.
+`read_file` is literal-only. `read_files`, `grep`, and write previews default to `redaction_mode="off"`; `strict` is explicit opt-in, and `auto` is kept only as a compatibility alias for `strict`. TSX/JS/TS outlines default to a compact agent profile that hides duplicate declaration/local-variable noise while keeping top-level declarations and components. JSON/YAML outlines default to the compact `agent` profile, which keeps key/property paths but omits noisy value and synthetic wrapper items, reporting `omitted_leaf_items`; use `output_profile="full"` only when local symbols or leaf-level config values are needed. Unicode diff and boundary previews are truncated as valid display text, not as an exact escaped-code oracle. `workspace_inventory` remains directory-level and recommends bounded `glob_file_search` rather than guessed file reads; `continuation.page_complete` describes the returned page, while `summary.summary_coverage_complete`, `summary.tree_scan_complete`, `summary.summary_incomplete_reason`, and `summary.scan_scope` describe summary/tree coverage.
 
-## Installation
-
-### MCP Registry
-
-This server is listed in the [Official MCP Registry](https://registry.modelcontextprotocol.io/?search=mcp-file-tools) for discovery.
-
-### Windows x64
-**Note:** Run these commands in **PowerShell**, not in CMD.
-
-```powershell
-# Download
-mkdir -Force "$env:LOCALAPPDATA\Programs\mcp-file-tools"
-iwr "https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest/download/mcp-file-tools_windows_amd64.exe" -OutFile "$env:LOCALAPPDATA\Programs\mcp-file-tools\mcp-file-tools.exe"
-# Install with Claude Code + VSCode (allows access to D:\Projects)
-claude mcp add --scope user file-tools -- "$env:LOCALAPPDATA\Programs\mcp-file-tools\mcp-file-tools.exe" "D:\Projects"
-```
-
-### Linux x64
-
-```bash
-# Download
-mkdir -p ~/.local/bin
-curl -L "https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest/download/mcp-file-tools_linux_amd64" -o ~/.local/bin/mcp-file-tools
-chmod +x ~/.local/bin/mcp-file-tools
-# Install with Claude Code + VSCode (allows access to ~/Projects)
-claude mcp add --scope user file-tools -- ~/.local/bin/mcp-file-tools ~/Projects
-```
-
-### macOS ARM64
-
-```bash
-# Download
-mkdir -p ~/.local/bin
-curl -L "https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest/download/mcp-file-tools_darwin_arm64" -o ~/.local/bin/mcp-file-tools
-chmod +x ~/.local/bin/mcp-file-tools
-# Install with Claude Code + VSCode (allows access to ~/Projects)
-claude mcp add --scope user file-tools -- ~/.local/bin/mcp-file-tools ~/Projects
-```
-
-### Go Install (All Platforms)
-
-```bash
-# Install with Go (requires Go 1.23+)
-go install github.com/dimitar-grigorov/mcp-file-tools/cmd/mcp-file-tools@latest
-# Add to Claude Code + VSCode (Linux/macOS)
-claude mcp add --scope user file-tools -- $(go env GOPATH)/bin/mcp-file-tools ~/Projects
-```
-
-```powershell
-# Add to Claude Code + VSCode (Windows PowerShell)
-claude mcp add --scope user file-tools -- "$(go env GOPATH)\bin\mcp-file-tools.exe" "D:\Projects"
-```
-
-### Other Clients
-
-For Claude Desktop, VSCode, or Cursor, use the downloaded binary path in your config:
-
-**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+## Build
 
 Windows:
-```json
-{
-  "mcpServers": {
-    "file-tools": {
-      "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\mcp-file-tools\\mcp-file-tools.exe",
-      "args": ["D:\\Projects", "C:\\Users\\YOUR_NAME\\Documents"]
-    }
-  }
-}
-```
 
-macOS / Linux:
-```json
-{
-  "mcpServers": {
-    "file-tools": {
-      "command": "/Users/YOUR_NAME/.local/bin/mcp-file-tools",
-      "args": ["/Users/YOUR_NAME/Projects", "/Users/YOUR_NAME/Documents"]
-    }
-  }
-}
-```
-
-The `args` array specifies allowed directories the server can access. Add as many directories as you need.
-
-**VSCode / Cursor (Claude Code extension)**
-
-If you already ran `claude mcp add --scope user` from the installation steps above, the server is already available in VSCode — no extra config needed.
-
-To configure separately for VSCode only:
 ```powershell
-claude mcp add --scope user file-tools -- "%LOCALAPPDATA%\Programs\mcp-file-tools\mcp-file-tools.exe" "D:\Projects"
+go build -o .\mcp-file-tools.exe .\cmd\mcp-file-tools
 ```
 
-Alternatively, create a **per-project config** by adding `.mcp.json` to your project root:
-```json
-{
-  "mcpServers": {
-    "file-tools": {
-      "type": "stdio",
-      "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\mcp-file-tools\\mcp-file-tools.exe",
-      "args": ["D:\\Projects", "D:\\Other\\Directory"]
-    }
-  }
-}
+Linux/macOS:
+
+```sh
+go build -o ./mcp-file-tools ./cmd/mcp-file-tools
 ```
 
-**Note:** The `type: "stdio"` field is required. The `args` array specifies allowed directories — the VSCode extension does not automatically add the workspace directory, so you must list all directories you want to access. To add more directories later, re-run the `claude mcp add` command with all directories listed (it overwrites the previous config).
+All release targets:
 
-**OpenAI Codex CLI**
+```sh
+make build-all
+```
 
-Codex does not have an `mcp add` command -- you need to edit `~/.codex/config.toml` manually.
+## Run
 
-Windows (PowerShell):
+Windows:
+
 ```powershell
-# Download
-mkdir -Force "$env:LOCALAPPDATA\Programs\mcp-file-tools"
-iwr "https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest/download/mcp-file-tools_windows_amd64.exe" -OutFile "$env:LOCALAPPDATA\Programs\mcp-file-tools\mcp-file-tools.exe"
+.\mcp-file-tools.exe
 ```
 
-Then add to `~/.codex/config.toml`:
+Linux/macOS:
+
+```sh
+./mcp-file-tools
+```
+
+Streamable HTTP:
+
+```sh
+./mcp-file-tools --http 127.0.0.1:8787
+```
+
+Append HTTP/tool-call logs to a file:
+
+```sh
+./mcp-file-tools --http 127.0.0.1:8787 --log-file ./logs/mcp-file-tools.log
+```
+
+Native watchdog with file logs:
+
+```sh
+# Linux/macOS after `make build` or `go build -o ./mcp-file-tools ./cmd/mcp-file-tools`
+sh ./scripts/start-mcp-file-tools-watchdog.sh
+```
+
+```powershell
+# Windows after `go build -o .\mcp-file-tools.exe .\cmd\mcp-file-tools`
+.\scripts\start-mcp-file-tools-watchdog.ps1
+```
+
+The watchdog scripts restart the HTTP server if it exits and write server logs to `logs/mcp-file-tools.log` plus watchdog lifecycle logs to `logs/watchdog.log`. For always-on operation after reboot, run the watchdog with the native process manager for the OS: systemd/launchd on Linux/macOS or Task Scheduler on Windows.
+
+Docker Compose:
+
+```sh
+cp .env.example .env
+docker compose up -d --build
+docker compose logs -f mcp-file-tools
+```
+
+The compose service binds the server to `0.0.0.0` inside the container, but publishes only `127.0.0.1:8787` on the host by default. Configure the read/write workspace mount in `.env`; `MCP_HOST_HOME` stays read-only for path lookup convenience. Without `cwd_id`, tool inputs still need absolute paths as seen inside the container; with `cwd_id`, use paths relative to the directory registered by `set_cwd`.
+
+Codex streamable HTTP config:
+
 ```toml
 [mcp_servers.file-tools]
-command = "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\mcp-file-tools\\mcp-file-tools.exe"
-args = ["D:\\Projects"]
+url = "http://127.0.0.1:8787/mcp"
 ```
 
-### Auto-approve All Tools (Claude Code)
+With Docker Compose, keep the container running and let Codex connect to this URL instead of launching the executable through stdio. The compose service uses `restart: unless-stopped`; Docker Desktop or the Docker daemon still needs to start after an OS reboot.
 
-To skip permission prompts for all file-tools commands, create `.claude/settings.local.json` in your project root:
+Docker can only access host paths that are mounted into the container. For broad local filesystem access across normal OS paths, run the native binary on that OS and configure your process manager of choice to keep it alive.
+
+## Current Working Directory IDs
+
+Call `set_cwd` with an absolute directory path:
 
 ```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls *)",
-      "Bash(grep *)",
-      "Bash(sort *)",
-      "Bash(wc *)",
-      "Bash(find *)",
-      "Bash(echo *)",
-      "Grep",
-      "Glob",
-      "WebSearch",
-      "mcp__file-tools__read_text_file",
-      "mcp__file-tools__read_multiple_files",
-      "mcp__file-tools__write_file",
-      "mcp__file-tools__edit_file",
-      "mcp__file-tools__copy_file",
-      "mcp__file-tools__list_directory",
-      "mcp__file-tools__tree",
-      "mcp__file-tools__directory_tree",
-      "mcp__file-tools__search_files",
-      "mcp__file-tools__grep_text_files",
-      "mcp__file-tools__detect_encoding",
-      "mcp__file-tools__convert_encoding",
-      "mcp__file-tools__detect_line_endings",
-      "mcp__file-tools__change_line_endings",
-      "mcp__file-tools__manage_bom",
-      "mcp__file-tools__list_encodings",
-      "mcp__file-tools__get_file_info",
-      "mcp__file-tools__create_directory",
-      "mcp__file-tools__list_allowed_directories",
-      "mcp__file-tools__check_for_updates"
-    ]
-  }
-}
+{"directory":"D:/ai-apps/mcp-file-tools"}
 ```
 
-This auto-approves safe read-only and editing file-tools operations plus common shell commands and web search. Destructive operations (`delete_file`, `move_file`) and `WebFetch` are intentionally excluded — Claude will ask before using them. Adjust to your needs.
+The success response is intentionally small:
 
-### Update
-
-The server checks for updates automatically and notifies you through tool responses when a newer version is available. To update:
-
-1. Close all Claude Code sessions (the binary is locked while running)
-2. Re-download the binary:
-
-```powershell
-iwr "https://github.com/dimitar-grigorov/mcp-file-tools/releases/latest/download/mcp-file-tools_windows_amd64.exe" `
-    -OutFile "$env:LOCALAPPDATA\Programs\mcp-file-tools\mcp-file-tools.exe"
+```json
+{"cwd_id":1}
 ```
 
-To disable update checks, set the environment variable `MCP_NO_UPDATE_CHECK=1`.
+Pass that `cwd_id` to other path tools to use relative paths:
 
-### Verify & Uninstall
-
-```bash
-# Check if the server is configured
-claude mcp list
-
-# Remove the server
-claude mcp remove file-tools
+```json
+{"cwd_id":1,"target_file":"README.md"}
 ```
 
-## How to Use
+`cwd_id` is server-wide state owned by the running file-tools server, not by a chat, MCP session, or subagent. It does not call `os.Chdir`, does not create a hidden default cwd, and is not a security token. If a `cwd_id` expires or is lost after restart, tools return a structured error recommending `set_cwd`; the agent should call `set_cwd` again with the remembered absolute `cwd`.
 
-Once installed, just ask Claude:
-- "List all .pas files in this directory"
-- "Read config.ini and detect its encoding"
-- "Show all supported encodings"
-- "Read MainForm.dfm using CP1251 encoding"
-
-**Security:** The server only accesses directories you explicitly allow:
-- **Automatic:** Claude Desktop/Code provide workspace directories automatically
-- **Manual:** Specify directories in config `args: ["/path/to/project"]`
+When `cwd_id` is present, successful outputs include `cwd_id` and absolute slash-normalized `cwd`; all other filesystem path fields are cwd-relative and use `/`, without a leading `./`. Without `cwd_id`, inputs remain absolute-only and outputs are slash-normalized absolute/display paths.
 
 ## Configuration
 
-The server can be configured via environment variables:
+The server keeps the public tool API small; runtime tuning is done with environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MCP_DEFAULT_ENCODING` | Default encoding for `write_file` when none specified | `cp1251` |
-| `MCP_MEMORY_THRESHOLD` | Memory threshold in bytes. Files smaller are loaded into memory for faster I/O; larger files use streaming. Also affects encoding detection mode. | `67108864` (64MB) |
+- `MCP_MEMORY_THRESHOLD` - file-size threshold for in-memory vs streaming reads, default `67108864` (64 MiB).
+- `MCP_MAX_TOOL_CALLS` - concurrent tool-call limit, default `min(8, max(4, runtime.NumCPU()))`.
+- `MCP_MAX_SCAN_CALLS` - concurrent recursive `grep`/`glob_file_search` scan limit, default `2`.
+- `MCP_MAX_LARGE_READ_CALLS` - concurrent large `read_file` limit for files above `MCP_MEMORY_THRESHOLD`, default `2`.
+- `MCP_WRITE_THRESHOLD` - maximum file size accepted by range write tools and Go outline parsing, default equals `MCP_MEMORY_THRESHOLD`.
+- `MCP_BATCH_MAX_TARGETS` - maximum targets in one batch range call, default `100`.
+- `MCP_BATCH_MAX_RANGES_PER_TARGET` - maximum ranges for one batch target, default `100`.
+- `MCP_BATCH_MAX_RANGES_PER_CALL` - maximum total ranges in one batch call, default `500`.
+- `MCP_BATCH_MAX_PLANNED_BYTES` - maximum planned batch write bytes, default equals `MCP_WRITE_THRESHOLD`.
+- `MCP_DIFF_PREVIEW_MAX_BYTES` - maximum bytes per bounded unified diff preview, default `32768`.
+- `MCP_READ_BACK_MAX_LINES` - maximum post-write validation read-back window, default `80`.
+- `MCP_BOUNDARY_PREVIEW_MAX_CHARS` - maximum boundary preview characters around write placement, default `1000`.
+- `MCP_READ_FILES_MAX_ITEMS` - maximum items in one `read_files` call, default `24`.
+- `MCP_READ_FILES_MAX_TOTAL_BYTES` - maximum total returned text bytes across one `read_files` call, default `262144`.
+- `MCP_READ_FILES_MAX_ITEM_BYTES` - maximum returned text bytes for one `read_files` item, default `65536`.
+- `MCP_CWD_STATE_PATH` - absolute server-local SQLite allocator state path for `cwd_id` high-water allocation. Local runs default to `os.UserConfigDir()/mcp-file-tools/cwd-state.sqlite`.
+- `MCP_CWD_REQUIRE_EXPLICIT_STATE_PATH` - strict boolean. When true, `MCP_CWD_STATE_PATH` must be set or `set_cwd` fails closed with `cwd_state_unavailable`. Accepted true values: `true`, `1`, `yes`, `on`; false values: `false`, `0`, `no`, `off`.
+- `MCP_CWD_TTL_SECONDS` - active in-memory cwd id TTL in seconds, default `604800` (7 days). Ordinary path-tool lookups do not refresh TTL; successful `set_cwd` for the same active directory does.
+- `MCP_HTTP_ADDR` - optional streamable HTTP bind address, equivalent to `--http`; omitted means stdio mode.
+- `MCP_LOG_FILE` - optional HTTP/tool-call log file path, equivalent to `--log-file`; parent directories are created automatically.
+- `MCP_PATH_MAPS` - optional semicolon-separated `source=target` rewrites for same-OS absolute path aliases. Cross-OS host/container path rewrites are ignored; no-cwd inputs still use paths as seen by the OS where the MCP server runs.
 
-To override, set environment variables in your config (Claude Desktop example):
-```json
-{
-  "mcpServers": {
-    "file-tools": {
-      "command": "C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\mcp-file-tools\\mcp-file-tools.exe",
-      "args": ["D:\\Projects"],
-      "env": {
-        "MCP_DEFAULT_ENCODING": "utf-8"
-      }
-    }
-  }
-}
-```
+The cwd allocator state bundle is the SQLite DB file, sibling `.guard`, sibling `.lock`, and any SQLite sidecars with `-journal`, `-wal`, or `-shm` suffixes. Treat that bundle atomically for reset, backup, snapshot, and restore. Deleting or restoring only part of it is unsupported; after an intentional allocator reset or snapshot rollback, discard remembered `cwd_id` values before using cwd mode again.
 
-## Use Cases
+## Tools
 
-### Legacy Codebases
+See [TOOLS.md](TOOLS.md) for the exact tool inputs and output shape.
 
-Many legacy projects use non-UTF-8 encodings that AI assistants can't handle natively:
+## Smoke Test
 
-- **Delphi/Pascal** (Windows-1251): Source files with Cyrillic UI text
-- **Visual Basic 6** (Windows-1252): Forms and config files with Western European characters
-- **Legacy PHP/HTML** (CP1251, ISO-8859-1): Web apps with localized content
-- **Old config files** (Various): INI, properties, registry files with legacy encodings
+Windows PowerShell:
 
-**How it works:**
-```
-User: Read config.ini and change the title to "Настройки"
-Assistant: [read_text_file with cp1251] → [modify UTF-8] → [write_file with cp1251]
-```
-
-The original encoding is preserved - files remain compatible with legacy tools.
-
-## Development
-
-**Prerequisites:** Go 1.23+
-
-```bash
-# Run tests
+```powershell
 go test ./...
-
-# Build
-go build -o mcp-file-tools ./cmd/mcp-file-tools
+go run .\test_server.go
 ```
 
-### Debugging with MCP Inspector
+Linux/macOS shell:
 
-[MCP Inspector](https://github.com/modelcontextprotocol/inspector) provides a web UI for testing MCP servers.
-
-**Prerequisites:** Node.js v18+
-
-```bash
-# Run with allowed directory (required)
-npx @modelcontextprotocol/inspector go run ./cmd/mcp-file-tools -- /path/to/allowed/dir
-
-# Or with built binary
-npx @modelcontextprotocol/inspector ./mcp-file-tools.exe C:\Projects
+```sh
+go test ./...
+go run ./test_server.go
 ```
-
-Opens a browser where you can view tools, call them with custom arguments, and inspect responses.
-
-### Manual Debugging
-
-Run the server with an allowed directory and send JSON-RPC commands via stdin:
-
-```bash
-# Specify allowed directory
-go run ./cmd/mcp-file-tools /path/to/project
-```
-
-Example commands (paste into terminal):
-
-```json
-{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_directory","arguments":{"path":"/path/to/project","pattern":"*.go"}}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_text_file","arguments":{"path":"/path/to/project/main.pas","encoding":"cp1251"}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"detect_encoding","arguments":{"path":"/path/to/project/file.txt"}}}
-```
-
-## License
-
-GPL-3.0 - see [LICENSE](LICENSE)

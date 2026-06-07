@@ -1,5 +1,5 @@
 # Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
-# Non-UTF-8 file encoding server: Cyrillic (CP1251, KOI8), Windows-1250-1258, ISO-8859 with auto-detection and Unicode conversion.
+# Read-only local filesystem MCP tools with complete single-response JSON output.
 
 runtime: container
 
@@ -7,26 +7,18 @@ startCommand:
   type: stdio
   configSchema:
     type: object
-    required:
-      - allowedDirectory
+    additionalProperties: false
     properties:
-      allowedDirectory:
+      cwdStatePath:
         type: string
-        description: The primary directory the server is allowed to access. Use '/app/data' for the default mount point in the container.
-      additionalDirectories:
-        type: array
-        items:
-          type: string
-        description: Optional additional directories the server can access.
-  commandFunction:
-    |-
+        description: Absolute writable server-local SQLite state path for cwd_id allocation. If omitted, set_cwd returns cwd_state_unavailable in this container runtime.
+  commandFunction: |-
     (config) => {
-      const args = [config.allowedDirectory];
-      if (config.additionalDirectories && Array.isArray(config.additionalDirectories)) {
-        args.push(...config.additionalDirectories);
+      const env = { MCP_CWD_REQUIRE_EXPLICIT_STATE_PATH: 'true' };
+      if (config.cwdStatePath) {
+        env.MCP_CWD_STATE_PATH = config.cwdStatePath;
       }
-      return { command: './server', args: args };
+      return { command: './server', args: [], env };
     }
   exampleConfig:
-    allowedDirectory: /app/data
-    additionalDirectories: []
+    cwdStatePath: "/state/cwd-state.sqlite"
