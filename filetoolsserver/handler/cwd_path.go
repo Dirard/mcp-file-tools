@@ -377,9 +377,6 @@ func sanitizeReadFileOutput(pathCtx PathContext, output *ReadFileOutput) {
 	output.Error = pathCtx.sanitizeErrorText(output.Error)
 	output.File = pathCtx.sanitizePathText(output.File)
 	sanitizeContinuationHint(pathCtx, output.Continuation)
-	if output.Coverage != nil && output.Coverage.Proof != nil {
-		output.Coverage.Proof.Range = output.Coverage.Proof.Range
-	}
 }
 
 func sanitizeReadFilesOutput(pathCtx PathContext, output *ReadFilesOutput) {
