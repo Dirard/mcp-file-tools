@@ -1,13 +1,13 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.dimitar-grigorov/mcp-file-tools",
+  "name": "io.github.Dirard/mcp-file-tools",
   "title": "MCP File Tools",
   "description": "Cross-platform MCP file tools with cwd_id relative path mode, complete single-response JSON output, and safe refactor helpers",
   "repository": {
-    "url": "https://github.com/dimitar-grigorov/mcp-file-tools",
+    "url": "https://github.com/Dirard/mcp-file-tools",
     "source": "github"
   },
-  "homepage": "https://github.com/dimitar-grigorov/mcp-file-tools",
+  "homepage": "https://github.com/Dirard/mcp-file-tools",
   "license": "GPL-3.0",
   "version": "0.0.0-dev",
   "packages": [],

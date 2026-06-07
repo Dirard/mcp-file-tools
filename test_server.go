@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/filetoolsserver"
-	"github.com/dimitar-grigorov/mcp-file-tools/filetoolsserver/handler"
+	"github.com/Dirard/mcp-file-tools/filetoolsserver"
+	"github.com/Dirard/mcp-file-tools/filetoolsserver/handler"
 )
 
 var failed = 0

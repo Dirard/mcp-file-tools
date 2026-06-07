@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 )
 
 func TestNewHandlerConfiguresLimitersFromConfig(t *testing.T) {

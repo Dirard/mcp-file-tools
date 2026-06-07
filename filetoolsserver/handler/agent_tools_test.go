@@ -13,7 +13,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 )
 
 func TestNewHandler(t *testing.T) {

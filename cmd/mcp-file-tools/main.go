@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/filetoolsserver"
+	"github.com/Dirard/mcp-file-tools/filetoolsserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

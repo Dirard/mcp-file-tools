@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/filetoolsserver/handler"
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/Dirard/mcp-file-tools/filetoolsserver/handler"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

@@ -1,4 +1,4 @@
-module github.com/dimitar-grigorov/mcp-file-tools
+module github.com/Dirard/mcp-file-tools
 
 go 1.26.0
 

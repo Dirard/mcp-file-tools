@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/encoding"
+	"github.com/Dirard/mcp-file-tools/internal/encoding"
 	textEncoding "golang.org/x/text/encoding"
 	"golang.org/x/text/transform"
 )

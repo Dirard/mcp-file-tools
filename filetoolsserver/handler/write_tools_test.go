@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 )
 
 func TestCopyRangesCreateNewAndDryRun(t *testing.T) {

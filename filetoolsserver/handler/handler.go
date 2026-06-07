@@ -1,6 +1,6 @@
 package handler
 
-import "github.com/dimitar-grigorov/mcp-file-tools/internal/config"
+import "github.com/Dirard/mcp-file-tools/internal/config"
 
 // Handler handles all file tool operations
 type Handler struct {
