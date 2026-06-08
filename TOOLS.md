@@ -147,10 +147,10 @@ Output:
 
 - Без `cwd_id` `target_file` должен быть полным абсолютным путем для ОС, где запущен MCP-сервер.
 - С `cwd_id` `target_file` должен быть относительным путем от зарегистрированного cwd.
-- `language="auto"` определяет Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, JSON, YAML и Svelte.
+- `language="auto"` определяет Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML и Svelte.
 - Markdown outline возвращает ATX headings с range до следующего heading того же или меньшего уровня; headings внутри fenced code blocks игнорируются.
 - Go outline возвращает `import_block`, `const_block`, `var_block`, `type_block` items с полным block range и children для отдельных specs, плюс functions и methods через `go/parser`.
-- Tree-sitter outline для JS/TS/TSX/Python/Java/JSON/YAML/Svelte возвращает selector metadata: `symbol_ref`, `symbol_path`, `byte_range`, `whole_line_range`, `write_safe` и `range_fingerprint`.
+- Tree-sitter outline для JS/TS/TSX/Python/Java/Rust/C/C++/C#/Ruby/Kotlin/Swift/Bash/JSON/YAML/Svelte возвращает selector metadata: `symbol_ref`, `symbol_path`, `byte_range`, `whole_line_range`, `write_safe` и `range_fingerprint`.
 - Source-bearing JS/TS exports like `export { x } from "pkg"` are reported as `kind="re_export"` outside `import_block`; exported declarations remain normal symbols.
 - JS/TS/TSX default `output_profile="agent"` keeps high-signal top-level declarations/components and hides duplicate declaration/local-variable noise; `output_profile="full"`, `kinds`, `name_contains`, `line_window`, and `enclosing_line` expose details when needed.
 - JSON/YAML config nodes are exact for navigation, but `write_safe=false` by default because moving/deleting delimiter-separated structured nodes can require comma/indent/token repair outside the selected line range.

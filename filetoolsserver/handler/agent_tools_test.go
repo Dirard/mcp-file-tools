@@ -415,13 +415,24 @@ func TestOutlineFileTreeSitterLanguagesReturnSelectorMetadata(t *testing.T) {
 		symbol       string
 		kind         string
 		writeSafe    bool
+		extraSymbol  string
+		extraKind    string
+		wantImports  bool
 	}{
 		{name: "javascript", fileName: "sample.js", source: "function loadConfig() {\n  return true;\n}\n", language: "javascript", parserStatus: "ok", symbol: "loadConfig", kind: "function", writeSafe: true},
 		{name: "typescript", fileName: "sample.ts", source: "class Loader {\n  loadConfig(): boolean { return true }\n}\n", language: "typescript", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true},
 		{name: "tsx", fileName: "sample.tsx", source: "function Widget() {\n  return <section />;\n}\n", language: "tsx", parserStatus: "ok", symbol: "Widget", kind: "component", writeSafe: true},
 		{name: "jsx", fileName: "sample.jsx", source: "function Widget() {\n  return <section />;\n}\n", language: "javascript", parserStatus: "ok", symbol: "Widget", kind: "component", writeSafe: true},
 		{name: "python", fileName: "sample.py", source: "class Loader:\n    def load_config(self):\n        return True\n", language: "python", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true},
-		{name: "java", fileName: "sample.java", source: "package com.example;\n\nimport java.util.List;\n\npublic class Loader {\n  public boolean loadConfig() { return true; }\n}\n", language: "java", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true},
+		{name: "java", fileName: "sample.java", source: "package com.example;\n\nimport java.util.List;\n\npublic class Loader {\n  public boolean loadConfig() { return true; }\n}\n", language: "java", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true, wantImports: true},
+		{name: "rust", fileName: "sample.rs", source: "use std::fmt;\n\npub struct Loader { name: String }\nimpl Loader {\n  pub fn load_config(&self) -> bool { true }\n}\n", language: "rust", parserStatus: "ok", symbol: "Loader", kind: "struct", writeSafe: true, extraSymbol: "load_config", extraKind: "method", wantImports: true},
+		{name: "c", fileName: "sample.c", source: "#include <stdio.h>\n\nint load_config(void) {\n  return 1;\n}\n", language: "c", parserStatus: "ok", symbol: "load_config", kind: "function", writeSafe: true, wantImports: true},
+		{name: "cpp", fileName: "sample.cpp", source: "#include <vector>\n\nnamespace api {\nclass Loader {\npublic:\n  void loadConfig();\n};\n}\n", language: "cpp", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: false, extraSymbol: "loadConfig", extraKind: "method", wantImports: true},
+		{name: "csharp", fileName: "sample.cs", source: "using System;\n\nnamespace Api {\npublic class Loader {\n  public bool LoadConfig() { return true; }\n}\n}\n", language: "csharp", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true, extraSymbol: "LoadConfig", extraKind: "method", wantImports: true},
+		{name: "ruby", fileName: "sample.rb", source: "require \"json\"\n\nclass Loader\n  def load_config\n    true\n  end\nend\n", language: "ruby", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true, extraSymbol: "load_config", extraKind: "method", wantImports: true},
+		{name: "kotlin", fileName: "sample.kt", source: "package api\n\nimport kotlin.text.*\n\nclass Loader {\n  fun loadConfig(): Boolean = true\n}\n", language: "kotlin", parserStatus: "ok", symbol: "Loader", kind: "class", writeSafe: true, extraSymbol: "loadConfig", extraKind: "method", wantImports: true},
+		{name: "swift", fileName: "sample.swift", source: "import Foundation\n\nstruct Loader {\n  func loadConfig() -> Bool { true }\n}\n", language: "swift", parserStatus: "ok", symbol: "Loader", kind: "struct", writeSafe: true, extraSymbol: "loadConfig", extraKind: "method", wantImports: true},
+		{name: "bash", fileName: "sample.sh", source: "#!/usr/bin/env bash\nsource ./env.sh\nCONFIG_PATH=./config.json\n\nload_config() {\n  echo ok\n}\n", language: "bash", parserStatus: "ok", symbol: "load_config", kind: "function", writeSafe: true, extraSymbol: "CONFIG_PATH", extraKind: "variable", wantImports: true},
 		{name: "json", fileName: "sample.json", source: "{\n  \"service\": {\"enabled\": true}\n}\n", language: "json", parserStatus: "ok", symbol: "document.service", kind: "property", writeSafe: false},
 		{name: "yaml", fileName: "sample.yaml", source: "service:\n  enabled: true\n", language: "yaml", parserStatus: "ok", symbol: "document.service", kind: "key", writeSafe: false},
 		{name: "svelte", fileName: "sample.svelte", source: "<script>\n  export let loadConfig = true;\n</script>\n<section>{loadConfig}</section>\n", language: "svelte", parserStatus: "partial", symbol: "script", kind: "script", writeSafe: false},
@@ -457,12 +468,356 @@ func TestOutlineFileTreeSitterLanguagesReturnSelectorMetadata(t *testing.T) {
 			if item.Kind != tt.kind {
 				t.Fatalf("%s symbol kind = %q, want %q: %#v", tt.name, item.Kind, tt.kind, item)
 			}
+			if tt.wantImports && len(output.Imports) == 0 {
+				t.Fatalf("%s should expose import/include/source items", tt.name)
+			}
+			if tt.extraSymbol != "" {
+				extra := findOutlineItemByName(output.Symbols, tt.extraSymbol)
+				if extra == nil {
+					extra = findOutlineItemByDisplayNameSuffix(output.Symbols, tt.extraSymbol)
+				}
+				if extra == nil || extra.Kind != tt.extraKind {
+					t.Fatalf("%s should expose extra symbol %q as %q, symbols=%#v", tt.name, tt.extraSymbol, tt.extraKind, output.Symbols)
+				}
+			}
 			itemWriteSafe := boolValue(item.WriteSafe)
 			if item.WriteSafe == nil && item.Selector != nil {
 				itemWriteSafe = item.Selector.WriteSafe
 			}
 			if itemWriteSafe != tt.writeSafe {
 				t.Fatalf("%s write_safe = %#v, want %v: %#v", tt.name, item.WriteSafe, tt.writeSafe, item)
+			}
+			if output.Fingerprint == nil {
+				t.Fatalf("%s outline should expose source fingerprint for selector resolution", tt.name)
+			}
+			resolvedResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+				SourceFile:        file,
+				SourceFingerprint: *output.Fingerprint,
+				Selector:          SymbolSelectorQuery{SymbolRef: item.SymbolRef},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolvedResult.IsError || resolved.ResolutionStatus != resolveStatusResolved || len(resolved.ResolvedRanges) != 1 {
+				t.Fatalf("%s symbol_ref should resolve back to an exact range: result=%#v output=%#v", tt.name, resolvedResult, resolved)
+			}
+			if resolved.ResolvedRanges[0].Range != item.Range {
+				t.Fatalf("%s resolved range should match outline item range: got %#v want %#v", tt.name, resolved.ResolvedRanges[0].Range, item.Range)
+			}
+		})
+	}
+}
+
+func TestOutlineFileBashAgentProfileFiltersAssignmentNoise(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "build.sh")
+	source := "#!/usr/bin/env bash\nsource ./env.sh\nCONFIG_PATH=./config.json\nCONFIG_PATH=./override.json\n\nload_config() {\n  GOOS=linux\n  GOARCH=amd64\n  echo ok\n}\n"
+	if err := os.WriteFile(file, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || output.Language != "bash" || output.ParserStatus != "ok" {
+		t.Fatalf("bash outline should parse cleanly: result=%#v output=%#v", result, output)
+	}
+	if len(output.Imports) != 1 {
+		t.Fatalf("bash agent profile should keep source imports: %#v", output.Imports)
+	}
+	if output.Imports[0].Name != "./env.sh" {
+		t.Fatalf("bash source import should be named by target path: %#v", output.Imports)
+	}
+	if countOutlineItemsByKindAndName(output.Symbols, "variable", "CONFIG_PATH") != 1 {
+		t.Fatalf("bash agent profile should keep one top-level CONFIG_PATH assignment: %#v", output.Symbols)
+	}
+	if findOutlineItemByName(output.Symbols, "GOOS") != nil || findOutlineItemByName(output.Symbols, "GOARCH") != nil {
+		t.Fatalf("bash agent profile should hide nested assignment noise: %#v", output.Symbols)
+	}
+
+	fullResult, fullOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file, OutputProfile: outlineProfileFull})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fullResult.IsError || findOutlineItemByName(fullOutput.Symbols, "GOOS") == nil || countOutlineItemsByKindAndName(fullOutput.Symbols, "variable", "CONFIG_PATH") != 2 {
+		t.Fatalf("bash full profile should expose assignment details: result=%#v output=%#v", fullResult, fullOutput)
+	}
+	if fullOutput.Fingerprint == nil {
+		t.Fatalf("bash full profile should expose source fingerprint")
+	}
+	for _, symbol := range []string{"GOOS", "CONFIG_PATH"} {
+		item := findOutlineItemByName(fullOutput.Symbols, symbol)
+		if item == nil || item.SymbolRef == "" {
+			t.Fatalf("bash full profile should expose %s selector: %#v", symbol, fullOutput.Symbols)
+		}
+		resolvedResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+			SourceFile:        file,
+			SourceFingerprint: *fullOutput.Fingerprint,
+			Selector:          SymbolSelectorQuery{SymbolRef: item.SymbolRef},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolvedResult.IsError || resolved.ResolutionStatus != resolveStatusResolved || len(resolved.ResolvedRanges) != 1 || resolved.ResolvedRanges[0].Range != item.Range {
+			t.Fatalf("bash full-profile selector %s should resolve exactly: result=%#v output=%#v item=%#v", symbol, resolvedResult, resolved, item)
+		}
+	}
+}
+
+func TestOutlineFileCFamilyPrototypesResolveSelectors(t *testing.T) {
+	tempDir := t.TempDir()
+	tests := []struct {
+		name     string
+		fileName string
+		source   string
+		language string
+		symbol   string
+	}{
+		{name: "c_header", fileName: "loader.h", source: "#include <stdio.h>\n\nint load_config(void);\n", language: "c", symbol: "load_config"},
+		{name: "cpp_header", fileName: "loader.hpp", source: "#include <vector>\n\nnamespace api {\nbool load_config();\n}\n", language: "cpp", symbol: "load_config"},
+	}
+
+	h := NewHandler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(tempDir, tt.fileName)
+			if err := os.WriteFile(file, []byte(tt.source), 0644); err != nil {
+				t.Fatal(err)
+			}
+			result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError || output.Language != tt.language || output.ParserStatus != "ok" || output.Fingerprint == nil {
+				t.Fatalf("C-family header outline should parse cleanly: result=%#v output=%#v", result, output)
+			}
+			item := findOutlineItemByName(output.Symbols, tt.symbol)
+			if item == nil {
+				item = findOutlineItemByDisplayNameSuffix(output.Symbols, tt.symbol)
+			}
+			if item == nil || item.Kind != "function" || item.SymbolRef == "" || item.Selector == nil {
+				t.Fatalf("C-family prototype should expose function selector metadata: %#v", output.Symbols)
+			}
+			resolvedResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+				SourceFile:        file,
+				SourceFingerprint: *output.Fingerprint,
+				Selector:          SymbolSelectorQuery{SymbolRef: item.SymbolRef},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolvedResult.IsError || resolved.ResolutionStatus != resolveStatusResolved || len(resolved.ResolvedRanges) != 1 || resolved.ResolvedRanges[0].Range != item.Range {
+				t.Fatalf("C-family prototype selector should resolve exactly: result=%#v output=%#v item=%#v", resolvedResult, resolved, item)
+			}
+		})
+	}
+}
+
+func TestOutlineFileCFamilyGlobalVariablesAndCSharpFields(t *testing.T) {
+	tempDir := t.TempDir()
+	tests := []struct {
+		name     string
+		fileName string
+		source   string
+		language string
+		symbol   string
+		kind     string
+	}{
+		{name: "c_global", fileName: "globals.c", source: "extern int config_count;\nint load_config(void) {\n  int local_count = 0;\n  return local_count;\n}\n", language: "c", symbol: "config_count", kind: "variable"},
+		{name: "cpp_field", fileName: "globals.cpp", source: "namespace api {\nextern bool config_enabled;\nstruct Loader {\n  int config_count;\n};\nvoid load_config() {\n  int local_count = 0;\n}\n}\n", language: "cpp", symbol: "config_count", kind: "field"},
+		{name: "csharp_field", fileName: "Loader.cs", source: "public class Loader {\n  private int configCount;\n}\n", language: "csharp", symbol: "configCount", kind: "field"},
+	}
+
+	h := NewHandler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(tempDir, tt.fileName)
+			if err := os.WriteFile(file, []byte(tt.source), 0644); err != nil {
+				t.Fatal(err)
+			}
+			result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError || output.Language != tt.language || output.ParserStatus != "ok" || output.Fingerprint == nil {
+				t.Fatalf("outline should parse variable/field sample cleanly: result=%#v output=%#v", result, output)
+			}
+			item := findOutlineItemByName(output.Symbols, tt.symbol)
+			if item == nil {
+				item = findOutlineItemByDisplayNameSuffix(output.Symbols, tt.symbol)
+			}
+			if item == nil || item.Kind != tt.kind || item.SymbolRef == "" {
+				t.Fatalf("%s should expose %s %q, symbols=%#v", tt.name, tt.kind, tt.symbol, output.Symbols)
+			}
+			if tt.name == "cpp_field" {
+				global := findOutlineItemByName(output.Symbols, "config_enabled")
+				if global == nil || global.Kind != "variable" {
+					t.Fatalf("%s agent profile should keep namespace-scope variables: %#v", tt.name, output.Symbols)
+				}
+			}
+			if findOutlineItemByName(output.Symbols, "local_count") != nil {
+				t.Fatalf("%s agent profile should hide local C-family variables: %#v", tt.name, output.Symbols)
+			}
+			fullResult, fullOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file, OutputProfile: outlineProfileFull})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fullResult.IsError {
+				t.Fatalf("%s full profile should parse cleanly: result=%#v output=%#v", tt.name, fullResult, fullOutput)
+			}
+			if strings.Contains(tt.source, "local_count") && findOutlineItemByName(fullOutput.Symbols, "local_count") == nil {
+				t.Fatalf("%s full profile should expose local C-family variables: %#v", tt.name, fullOutput.Symbols)
+			}
+			local := findOutlineItemByName(fullOutput.Symbols, "local_count")
+			if local != nil {
+				if fullOutput.Fingerprint == nil || local.SymbolRef == "" {
+					t.Fatalf("%s full local variable should expose selector metadata: output=%#v item=%#v", tt.name, fullOutput, local)
+				}
+				resolvedResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+					SourceFile:        file,
+					SourceFingerprint: *fullOutput.Fingerprint,
+					Selector:          SymbolSelectorQuery{SymbolRef: local.SymbolRef},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resolvedResult.IsError || resolved.ResolutionStatus != resolveStatusResolved || len(resolved.ResolvedRanges) != 1 || resolved.ResolvedRanges[0].Range != local.Range {
+					t.Fatalf("%s full-profile local C-family selector should resolve exactly: result=%#v output=%#v item=%#v", tt.name, resolvedResult, resolved, local)
+				}
+			}
+		})
+	}
+}
+
+func TestOutlineFileCFamilyMultiDeclaratorsAreNotWriteSafeSymbols(t *testing.T) {
+	tempDir := t.TempDir()
+	tests := []struct {
+		name     string
+		fileName string
+		source   string
+		symbols  []string
+	}{
+		{name: "c_comma_declaration", fileName: "multi.c", source: "int a, b;\nint c = 1, d = 2;\n", symbols: []string{"a", "b", "c", "d"}},
+		{name: "cpp_comma_field", fileName: "multi.cpp", source: "struct S {\n  int a, b;\n};\n", symbols: []string{"a", "b"}},
+	}
+
+	h := NewHandler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(tempDir, tt.fileName)
+			if err := os.WriteFile(file, []byte(tt.source), 0644); err != nil {
+				t.Fatal(err)
+			}
+			result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file, OutputProfile: outlineProfileFull})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError || output.ParserStatus != "ok" {
+				t.Fatalf("C-family multi-declarator sample should parse cleanly: result=%#v output=%#v", result, output)
+			}
+			for _, symbol := range tt.symbols {
+				item := findOutlineItemByName(output.Symbols, symbol)
+				if item != nil && boolValue(item.WriteSafe) {
+					t.Fatalf("%s multi-declarator symbol %q must not be write_safe: %#v", tt.name, symbol, item)
+				}
+			}
+		})
+	}
+}
+
+func TestOutlineFileRubyParenthesizedImports(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "loader.rb")
+	source := "require(\"json\")\nrequire_relative(\"./loader\")\nload(\"./boot.rb\")\n\nclass Loader\nend\n"
+	if err := os.WriteFile(file, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || output.Language != "ruby" || output.ParserStatus != "ok" {
+		t.Fatalf("ruby parenthesized imports should parse cleanly: result=%#v output=%#v", result, output)
+	}
+	if len(output.Imports) != 3 {
+		t.Fatalf("ruby parenthesized import calls should be imports: %#v", output.Imports)
+	}
+	for _, name := range []string{"json", "./loader", "./boot.rb"} {
+		if findOutlineItemByName(output.Imports, name) == nil {
+			t.Fatalf("ruby import should be named by target %q: %#v", name, output.Imports)
+		}
+	}
+}
+
+func TestOutlineFileKotlinCommonDeclarations(t *testing.T) {
+	tempDir := t.TempDir()
+	source := "package api\n\nobject Registry {\n  fun loadConfig(): Boolean = true\n}\n\nfun interface Loader {\n  fun load(): Boolean\n}\n\nenum class State { Ready }\n\ntypealias LoaderName = String\n"
+	file := filepath.Join(tempDir, "sample.kt")
+	if err := os.WriteFile(file, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || output.Language != "kotlin" || output.ParserStatus != "ok" {
+		t.Fatalf("kotlin common declarations should parse cleanly: result=%#v output=%#v", result, output)
+	}
+	for _, want := range []struct {
+		name string
+		kind string
+	}{
+		{name: "Registry", kind: "object"},
+		{name: "Loader", kind: "interface"},
+		{name: "State", kind: "enum"},
+		{name: "LoaderName", kind: "typealias"},
+		{name: "loadConfig", kind: "method"},
+	} {
+		item := findOutlineItemByName(output.Symbols, want.name)
+		if item == nil || item.Kind != want.kind {
+			t.Fatalf("kotlin should expose %q as %q, symbols=%#v", want.name, want.kind, output.Symbols)
+		}
+	}
+}
+
+func TestOutlineFileSwiftModifiersPreserveClassLikeKinds(t *testing.T) {
+	tempDir := t.TempDir()
+	tests := []struct {
+		name   string
+		source string
+		symbol string
+		kind   string
+	}{
+		{name: "public_struct", source: "public struct Loader {\n  public func loadConfig() -> Bool { true }\n}\n", symbol: "Loader", kind: "struct"},
+		{name: "private_enum", source: "private enum State {\n  case ready\n}\n", symbol: "State", kind: "enum"},
+		{name: "final_class", source: "final class Loader {\n  private var ready = true\n}\n", symbol: "Loader", kind: "class"},
+		{name: "public_actor", source: "public actor Loader {\n  func loadConfig() -> Bool { true }\n}\n", symbol: "Loader", kind: "actor"},
+		{name: "multiline_attribute_struct", source: "@available(iOS 17, *)\n@MainActor\npublic struct Loader {\n  func loadConfig() -> Bool { true }\n}\n", symbol: "Loader", kind: "struct"},
+	}
+
+	h := NewHandler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := filepath.Join(tempDir, tt.name+".swift")
+			if err := os.WriteFile(file, []byte(tt.source), 0644); err != nil {
+				t.Fatal(err)
+			}
+			result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError || output.Language != "swift" || output.ParserStatus != "ok" {
+				t.Fatalf("swift modifier sample should parse cleanly: result=%#v output=%#v", result, output)
+			}
+			item := findOutlineItemByName(output.Symbols, tt.symbol)
+			if item == nil || item.Kind != tt.kind {
+				t.Fatalf("swift %s should classify %q as %q, symbols=%#v", tt.name, tt.symbol, tt.kind, output.Symbols)
 			}
 		})
 	}
@@ -478,6 +833,17 @@ func findOutlineItemByName(items []OutlineItem, name string) *OutlineItem {
 		}
 	}
 	return nil
+}
+
+func countOutlineItemsByKindAndName(items []OutlineItem, kind, name string) int {
+	count := 0
+	for i := range items {
+		if items[i].Kind == kind && items[i].Name == name {
+			count++
+		}
+		count += countOutlineItemsByKindAndName(items[i].Children, kind, name)
+	}
+	return count
 }
 
 func findOutlineItemByKind(items []OutlineItem, kind string) *OutlineItem {

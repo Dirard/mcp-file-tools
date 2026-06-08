@@ -105,7 +105,13 @@ func (h *Handler) outlineTreeSitter(ctx context.Context, info fileTextInfo, lang
 	if isJSLikeLanguage(language) {
 		items = filterJSLikeOutlineProfile(items, options)
 	}
-	imports, symbols, sections := splitTreeSitterOutlineItems(items)
+	if language == outlineLanguageC || language == outlineLanguageCPP {
+		items = filterCFamilyOutlineProfile(items, options)
+	}
+	if language == outlineLanguageBash {
+		items = filterBashOutlineProfile(items, options)
+	}
+	imports, symbols, sections := splitTreeSitterOutlineItems(items, language)
 	if configAgentProfileCompactActive(options, language) {
 		symbols = compactConfigOutlinePresentation(symbols)
 		sections = compactConfigOutlinePresentation(compactConfigOutlineSections(sections))
@@ -140,17 +146,17 @@ func (e treeSitterExtractor) rootSymbolSpec(root *gotreesitter.Node) (treeSitter
 	}
 }
 
-func splitTreeSitterOutlineItems(items []OutlineItem) ([]OutlineItem, []OutlineItem, []OutlineItem) {
+func splitTreeSitterOutlineItems(items []OutlineItem, language string) ([]OutlineItem, []OutlineItem, []OutlineItem) {
 	imports := []OutlineItem{}
 	symbols := []OutlineItem{}
 	sections := []OutlineItem{}
 	for _, item := range items {
-		collectTreeSitterOutlineCategories(item, true, &imports, &symbols, &sections)
+		collectTreeSitterOutlineCategories(item, true, language, &imports, &symbols, &sections)
 	}
 	return imports, symbols, sections
 }
 
-func collectTreeSitterOutlineCategories(item OutlineItem, collectSection bool, imports, symbols, sections *[]OutlineItem) {
+func collectTreeSitterOutlineCategories(item OutlineItem, collectSection bool, language string, imports, symbols, sections *[]OutlineItem) {
 	switch {
 	case isTreeSitterImportKind(item.Kind):
 		if item.Kind == "import_block" {
@@ -159,7 +165,7 @@ func collectTreeSitterOutlineCategories(item OutlineItem, collectSection bool, i
 			*imports = append(*imports, itemWithoutChildren(item))
 		}
 		return
-	case isTreeSitterSectionKind(item.Kind):
+	case isTreeSitterSectionKind(item.Kind, language):
 		if collectSection {
 			*sections = append(*sections, item)
 		}
@@ -167,7 +173,7 @@ func collectTreeSitterOutlineCategories(item OutlineItem, collectSection bool, i
 		*symbols = append(*symbols, itemWithoutChildren(item))
 	}
 	for _, child := range item.Children {
-		collectTreeSitterOutlineCategories(child, false, imports, symbols, sections)
+		collectTreeSitterOutlineCategories(child, false, language, imports, symbols, sections)
 	}
 }
 
@@ -180,7 +186,10 @@ func isTreeSitterImportKind(kind string) bool {
 	return kind == "package" || kind == "import" || kind == "re_export" || kind == "import_block"
 }
 
-func isTreeSitterSectionKind(kind string) bool {
+func isTreeSitterSectionKind(kind, language string) bool {
+	if (kind == "object" || kind == "array") && language != outlineLanguageJSON {
+		return false
+	}
 	switch kind {
 	case "document", "object", "array", "stream", "mapping", "sequence", "markup":
 		return true
@@ -201,6 +210,22 @@ func treeSitterLanguage(language string) *gotreesitter.Language {
 		return grammars.PythonLanguage()
 	case outlineLanguageJava:
 		return grammars.JavaLanguage()
+	case outlineLanguageRust:
+		return grammars.RustLanguage()
+	case outlineLanguageC:
+		return grammars.CLanguage()
+	case outlineLanguageCPP:
+		return grammars.CppLanguage()
+	case outlineLanguageCSharp:
+		return grammars.CSharpLanguage()
+	case outlineLanguageRuby:
+		return grammars.RubyLanguage()
+	case outlineLanguageKotlin:
+		return grammars.KotlinLanguage()
+	case outlineLanguageSwift:
+		return grammars.SwiftLanguage()
+	case outlineLanguageBash:
+		return grammars.BashLanguage()
 	case outlineLanguageJSON:
 		return grammars.JsonLanguage()
 	case outlineLanguageYAML:
@@ -401,6 +426,12 @@ func (e treeSitterExtractor) refineSymbolSpec(node *gotreesitter.Node, spec tree
 	if e.language == outlineLanguagePython && spec.kind == "function" && parentKind == "class" {
 		spec.kind = "method"
 	}
+	if e.language == outlineLanguageRust && spec.kind == "function" && (parentKind == "impl" || parentKind == "trait") {
+		spec.kind = "method"
+	}
+	if (e.language == outlineLanguageKotlin || e.language == outlineLanguageSwift) && spec.kind == "function" && (parentKind == "class" || parentKind == "struct" || parentKind == "enum" || parentKind == "protocol" || parentKind == "interface" || parentKind == "object" || parentKind == "companion_object") {
+		spec.kind = "method"
+	}
 	if (e.language == outlineLanguageJavaScript || e.language == outlineLanguageTypeScript || e.language == outlineLanguageTSX) && isPascalCaseName(spec.name) {
 		if spec.kind == "function" || spec.kind == "variable" {
 			if (e.language == outlineLanguageTSX || e.language == outlineLanguageJavaScript) && nodeContainsJSXLikeMarkup(node.Text(e.source)) {
@@ -426,6 +457,20 @@ func (e treeSitterExtractor) symbolSpec(node *gotreesitter.Node) (treeSitterSymb
 		return e.pythonSymbolSpec(node, nodeType)
 	case outlineLanguageJava:
 		return e.javaSymbolSpec(node, nodeType)
+	case outlineLanguageRust:
+		return e.rustSymbolSpec(node, nodeType)
+	case outlineLanguageC, outlineLanguageCPP:
+		return e.cFamilySymbolSpec(node, nodeType)
+	case outlineLanguageCSharp:
+		return e.csharpSymbolSpec(node, nodeType)
+	case outlineLanguageRuby:
+		return e.rubySymbolSpec(node, nodeType)
+	case outlineLanguageKotlin:
+		return e.kotlinSymbolSpec(node, nodeType)
+	case outlineLanguageSwift:
+		return e.swiftSymbolSpec(node, nodeType)
+	case outlineLanguageBash:
+		return e.bashSymbolSpec(node, nodeType)
 	case outlineLanguageJSON:
 		return e.jsonSymbolSpec(node, nodeType)
 	case outlineLanguageYAML:
@@ -559,6 +604,207 @@ func (e treeSitterExtractor) javaSymbolSpec(node *gotreesitter.Node, nodeType st
 			return treeSitterSymbolSpec{}, false
 		}
 		return treeSitterSymbolSpec{kind: "field", name: name, detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) rustSymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "use_declaration":
+		return treeSitterSymbolSpec{kind: "import", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "mod_item":
+		return treeSitterSymbolSpec{kind: "module", name: e.nodeName(node), detail: nodeType}, true
+	case "struct_item":
+		return treeSitterSymbolSpec{kind: "struct", name: e.nodeName(node), detail: nodeType}, true
+	case "enum_item":
+		return treeSitterSymbolSpec{kind: "enum", name: e.nodeName(node), detail: nodeType}, true
+	case "trait_item":
+		return treeSitterSymbolSpec{kind: "trait", name: e.nodeName(node), detail: nodeType}, true
+	case "impl_item":
+		return treeSitterSymbolSpec{kind: "impl", name: e.rustImplName(node), detail: nodeType}, true
+	case "function_item":
+		return treeSitterSymbolSpec{kind: "function", name: e.nodeName(node), detail: nodeType}, true
+	case "function_signature_item":
+		return treeSitterSymbolSpec{kind: "method", name: e.nodeName(node), detail: nodeType}, true
+	case "type_item":
+		return treeSitterSymbolSpec{kind: "type", name: e.nodeName(node), detail: nodeType}, true
+	case "const_item":
+		return treeSitterSymbolSpec{kind: "constant", name: e.nodeName(node), detail: nodeType}, true
+	case "static_item":
+		return treeSitterSymbolSpec{kind: "static", name: e.nodeName(node), detail: nodeType}, true
+	case "macro_definition":
+		return treeSitterSymbolSpec{kind: "macro", name: e.nodeName(node), detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) cFamilySymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "preproc_include":
+		return treeSitterSymbolSpec{kind: "import", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "namespace_definition":
+		return treeSitterSymbolSpec{kind: "namespace", name: e.nodeName(node), detail: nodeType}, true
+	case "class_specifier":
+		return treeSitterSymbolSpec{kind: "class", name: e.nodeName(node), detail: nodeType}, true
+	case "struct_specifier":
+		return treeSitterSymbolSpec{kind: "struct", name: e.nodeName(node), detail: nodeType}, true
+	case "union_specifier":
+		return treeSitterSymbolSpec{kind: "union", name: e.nodeName(node), detail: nodeType}, true
+	case "enum_specifier":
+		return treeSitterSymbolSpec{kind: "enum", name: e.nodeName(node), detail: nodeType}, true
+	case "type_definition":
+		return treeSitterSymbolSpec{kind: "type", name: e.cDeclaratorName(node), detail: nodeType}, true
+	case "function_definition":
+		name := e.cDeclaratorName(node)
+		kind := "function"
+		if strings.Contains(name, "::") {
+			kind = "method"
+		}
+		return treeSitterSymbolSpec{kind: kind, name: name, detail: nodeType}, true
+	case "declaration":
+		name := e.cDeclaratorName(node)
+		if name == "" {
+			return treeSitterSymbolSpec{}, false
+		}
+		if treeSitterNodeHasDescendantType(node, e.lang, "function_declarator") {
+			kind := "function"
+			if strings.Contains(name, "::") {
+				kind = "method"
+			}
+			return treeSitterSymbolSpec{kind: kind, name: name, detail: nodeType}, true
+		}
+		if cFamilyHasMultipleDeclarators(node.Text(e.source)) {
+			return treeSitterSymbolSpec{}, false
+		}
+		if treeSitterNamedChildCountByType(node, e.lang, "init_declarator") > 1 {
+			return treeSitterSymbolSpec{}, false
+		}
+		return treeSitterSymbolSpec{kind: "variable", name: name, detail: nodeType}, true
+	case "field_declaration":
+		name := e.cDeclaratorName(node)
+		if name == "" {
+			return treeSitterSymbolSpec{}, false
+		}
+		if treeSitterNodeHasDescendantType(node, e.lang, "function_declarator") {
+			return treeSitterSymbolSpec{kind: "method", name: name, detail: nodeType}, true
+		}
+		if cFamilyHasMultipleDeclarators(node.Text(e.source)) {
+			return treeSitterSymbolSpec{}, false
+		}
+		return treeSitterSymbolSpec{kind: "field", name: name, detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) csharpSymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "using_directive":
+		return treeSitterSymbolSpec{kind: "import", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "namespace_declaration":
+		return treeSitterSymbolSpec{kind: "namespace", name: e.nodeName(node), detail: nodeType}, true
+	case "class_declaration":
+		return treeSitterSymbolSpec{kind: "class", name: e.nodeName(node), detail: nodeType}, true
+	case "interface_declaration":
+		return treeSitterSymbolSpec{kind: "interface", name: e.nodeName(node), detail: nodeType}, true
+	case "struct_declaration":
+		return treeSitterSymbolSpec{kind: "struct", name: e.nodeName(node), detail: nodeType}, true
+	case "record_declaration":
+		return treeSitterSymbolSpec{kind: "record", name: e.nodeName(node), detail: nodeType}, true
+	case "enum_declaration":
+		return treeSitterSymbolSpec{kind: "enum", name: e.nodeName(node), detail: nodeType}, true
+	case "method_declaration":
+		return treeSitterSymbolSpec{kind: "method", name: e.nodeName(node), detail: nodeType}, true
+	case "constructor_declaration":
+		return treeSitterSymbolSpec{kind: "constructor", name: e.nodeName(node), detail: nodeType}, true
+	case "property_declaration":
+		return treeSitterSymbolSpec{kind: "property", name: e.nodeName(node), detail: nodeType}, true
+	case "field_declaration":
+		name := e.csharpFieldName(node)
+		if name == "" {
+			return treeSitterSymbolSpec{}, false
+		}
+		return treeSitterSymbolSpec{kind: "field", name: name, detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) rubySymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "call":
+		line := firstTreeSitterLine(node.Text(e.source))
+		if name := rubyImportName(line); name != "" {
+			return treeSitterSymbolSpec{kind: "import", name: name, detail: nodeType}, true
+		}
+		return treeSitterSymbolSpec{}, false
+	case "module":
+		return treeSitterSymbolSpec{kind: "module", name: e.nodeName(node), detail: nodeType}, true
+	case "class":
+		return treeSitterSymbolSpec{kind: "class", name: e.nodeName(node), detail: nodeType}, true
+	case "method", "singleton_method":
+		return treeSitterSymbolSpec{kind: "method", name: e.nodeName(node), detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) kotlinSymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "package_header":
+		return treeSitterSymbolSpec{kind: "package", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "import_header":
+		return treeSitterSymbolSpec{kind: "import", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "class_declaration":
+		return treeSitterSymbolSpec{kind: e.kotlinClassLikeKind(node), name: e.nodeName(node), detail: nodeType}, true
+	case "object_declaration":
+		return treeSitterSymbolSpec{kind: e.kotlinClassLikeKind(node), name: e.nodeName(node), detail: nodeType}, true
+	case "companion_object":
+		return treeSitterSymbolSpec{kind: "companion_object", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "type_alias", "typealias", "type_alias_declaration", "typealias_declaration":
+		return treeSitterSymbolSpec{kind: "typealias", name: e.nodeName(node), detail: nodeType}, true
+	case "function_declaration":
+		return treeSitterSymbolSpec{kind: "function", name: e.nodeName(node), detail: nodeType}, true
+	case "property_declaration":
+		return treeSitterSymbolSpec{kind: "property", name: e.nodeName(node), detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) swiftSymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "import_declaration":
+		return treeSitterSymbolSpec{kind: "import", name: e.nodeNameOrLine(node), detail: nodeType}, true
+	case "protocol_declaration":
+		return treeSitterSymbolSpec{kind: "protocol", name: e.nodeName(node), detail: nodeType}, true
+	case "class_declaration":
+		return treeSitterSymbolSpec{kind: e.swiftClassLikeKind(node), name: e.nodeName(node), detail: nodeType}, true
+	case "function_declaration", "protocol_function_declaration":
+		return treeSitterSymbolSpec{kind: "function", name: e.nodeName(node), detail: nodeType}, true
+	case "property_declaration":
+		return treeSitterSymbolSpec{kind: "property", name: e.nodeName(node), detail: nodeType}, true
+	case "enum_entry":
+		return treeSitterSymbolSpec{kind: "enum_case", name: e.nodeName(node), detail: nodeType}, true
+	default:
+		return treeSitterSymbolSpec{}, false
+	}
+}
+
+func (e treeSitterExtractor) bashSymbolSpec(node *gotreesitter.Node, nodeType string) (treeSitterSymbolSpec, bool) {
+	switch nodeType {
+	case "command":
+		line := strings.TrimSpace(firstTreeSitterLine(node.Text(e.source)))
+		if name := bashSourceImportName(line); name != "" {
+			return treeSitterSymbolSpec{kind: "import", name: name, detail: nodeType}, true
+		}
+		return treeSitterSymbolSpec{}, false
+	case "function_definition":
+		return treeSitterSymbolSpec{kind: "function", name: e.nodeName(node), detail: nodeType}, true
+	case "variable_assignment":
+		return treeSitterSymbolSpec{kind: "variable", name: e.nodeName(node), detail: nodeType}, true
 	default:
 		return treeSitterSymbolSpec{}, false
 	}
@@ -909,8 +1155,13 @@ func (e treeSitterExtractor) treeSitterSymbolDelimiterSafeForNode(node *gotreesi
 			}
 		}
 	}
-	if e.language == outlineLanguageJava && kind == "field" && treeSitterNamedChildCountByType(node, e.lang, "variable_declarator") > 1 {
-		return false
+	if kind == "field" {
+		if e.language == outlineLanguageJava && treeSitterNamedChildCountByType(node, e.lang, "variable_declarator") > 1 {
+			return false
+		}
+		if e.language == outlineLanguageCSharp && strings.Contains(firstTreeSitterLine(node.Text(e.source)), ",") {
+			return false
+		}
 	}
 	return treeSitterSymbolDelimiterSafe(e.language, kind)
 }
@@ -957,8 +1208,19 @@ func treeSitterNamedDescendantCountByType(node *gotreesitter.Node, lang *gotrees
 	return count
 }
 
+func treeSitterNodeHasDescendantType(node *gotreesitter.Node, lang *gotreesitter.Language, nodeType string) bool {
+	return treeSitterNamedDescendantCountByType(node, lang, nodeType) > 0
+}
+
 func outlineBoolPtr(value bool) *bool {
 	return &value
+}
+
+func (e treeSitterExtractor) nodeNameOrLine(node *gotreesitter.Node) string {
+	if name := e.nodeName(node); name != "" {
+		return name
+	}
+	return firstTreeSitterLine(node.Text(e.source))
 }
 
 func (e treeSitterExtractor) nodeName(node *gotreesitter.Node) string {
@@ -980,13 +1242,225 @@ func (e treeSitterExtractor) nodeName(node *gotreesitter.Node) string {
 		}
 		childType := child.Type(e.lang)
 		switch childType {
-		case "identifier", "property_identifier", "type_identifier", "shorthand_property_identifier", "string", "string_scalar", "plain_scalar", "scoped_identifier", "qualified_name":
+		case "identifier", "property_identifier", "type_identifier", "shorthand_property_identifier", "string", "string_scalar", "plain_scalar", "scoped_identifier", "qualified_identifier", "qualified_name", "namespace_identifier", "field_identifier", "simple_identifier", "constant", "variable_name", "word", "system_lib_string":
 			if name := normalizeTreeSitterName(child.Text(e.source)); name != "" {
+				return name
+			}
+		case "function_declarator", "parenthesized_declarator", "pointer_declarator", "reference_declarator", "init_declarator":
+			if name := e.nodeName(child); name != "" {
 				return name
 			}
 		}
 	}
 	return normalizeTreeSitterName(firstTreeSitterLine(node.Text(e.source)))
+}
+
+func (e treeSitterExtractor) rustImplName(node *gotreesitter.Node) string {
+	typ := ""
+	if typeNode := node.ChildByFieldName("type", e.lang); typeNode != nil {
+		typ = e.nodeName(typeNode)
+	}
+	if traitNode := node.ChildByFieldName("trait", e.lang); traitNode != nil {
+		trait := e.nodeName(traitNode)
+		if trait != "" && typ != "" {
+			return trait + " for " + typ
+		}
+		if trait != "" {
+			return trait
+		}
+	}
+	if typ != "" {
+		return typ
+	}
+	return e.nodeNameOrLine(node)
+}
+
+func (e treeSitterExtractor) cDeclaratorName(node *gotreesitter.Node) string {
+	for _, field := range []string{"declarator", "name"} {
+		if child := node.ChildByFieldName(field, e.lang); child != nil {
+			if name := e.nodeName(child); name != "" {
+				return name
+			}
+		}
+	}
+	return e.nodeName(node)
+}
+
+func (e treeSitterExtractor) csharpFieldName(node *gotreesitter.Node) string {
+	if node == nil {
+		return ""
+	}
+	if name := e.csharpFieldDeclaratorName(node); name != "" {
+		return name
+	}
+	return csharpFieldNameFromLine(firstTreeSitterLine(node.Text(e.source)))
+}
+
+func (e treeSitterExtractor) csharpFieldDeclaratorName(node *gotreesitter.Node) string {
+	if node == nil {
+		return ""
+	}
+	for i := 0; i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		if child == nil {
+			continue
+		}
+		if child.Type(e.lang) == "variable_declarator" {
+			if name := e.nodeName(child); name != "" {
+				return name
+			}
+		}
+		if name := e.csharpFieldDeclaratorName(child); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func csharpFieldNameFromLine(line string) string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimSuffix(line, ";")
+	if idx := strings.Index(line, "="); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if idx := strings.LastIndex(line, ","); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	parts := strings.Fields(line)
+	if len(parts) == 0 {
+		return ""
+	}
+	return normalizeTreeSitterName(parts[len(parts)-1])
+}
+
+func (e treeSitterExtractor) kotlinClassLikeKind(node *gotreesitter.Node) string {
+	return classLikeKindFromText(node.Text(e.source), "class", map[string]string{
+		"companion object": "companion_object",
+		"enum":             "enum",
+		"interface":        "interface",
+		"object":           "object",
+		"class":            "class",
+	})
+}
+
+func (e treeSitterExtractor) swiftClassLikeKind(node *gotreesitter.Node) string {
+	return classLikeKindFromText(node.Text(e.source), "class", map[string]string{
+		"struct": "struct",
+		"enum":   "enum",
+		"actor":  "actor",
+		"class":  "class",
+	})
+}
+
+func classLikeKindFromText(text string, fallback string, keywords map[string]string) string {
+	tokens := declarationTokens(text)
+	for i, token := range tokens {
+		if i+1 < len(tokens) {
+			if kind, ok := keywords[token+" "+tokens[i+1]]; ok {
+				return kind
+			}
+		}
+		if kind, ok := keywords[token]; ok {
+			return kind
+		}
+	}
+	return fallback
+}
+
+func rubyImportName(line string) string {
+	line = strings.TrimSpace(line)
+	for _, keyword := range []string{"require", "require_relative", "load"} {
+		if line == keyword {
+			return keyword
+		}
+		if strings.HasPrefix(line, keyword+" ") || strings.HasPrefix(line, keyword+"(") {
+			arg := strings.TrimSpace(strings.TrimPrefix(line, keyword))
+			return importArgumentName(arg)
+		}
+	}
+	return ""
+}
+
+func bashSourceImportName(line string) string {
+	line = strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(line, "source "):
+		return importArgumentName(strings.TrimPrefix(line, "source"))
+	case strings.HasPrefix(line, ". "):
+		return importArgumentName(strings.TrimPrefix(line, "."))
+	default:
+		return ""
+	}
+}
+
+func importArgumentName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "(")
+	value = strings.TrimSuffix(value, ")")
+	value = strings.TrimSpace(value)
+	if idx := strings.IndexAny(value, " \t"); idx >= 0 {
+		value = value[:idx]
+	}
+	value = strings.Trim(value, "\"'")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return value
+}
+
+func declarationTokens(text string) []string {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !(r == '_' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z')
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.ToLower(strings.TrimSpace(field))
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func cFamilyHasMultipleDeclarators(value string) bool {
+	angleDepth := 0
+	parenDepth := 0
+	bracketDepth := 0
+	braceDepth := 0
+	for _, r := range value {
+		switch r {
+		case '<':
+			angleDepth++
+		case '>':
+			if angleDepth > 0 {
+				angleDepth--
+			}
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case ',':
+			if angleDepth == 0 && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e treeSitterExtractor) javaFieldName(node *gotreesitter.Node) string {
@@ -1181,6 +1655,53 @@ func filterJSLikeOutlineProfile(items []OutlineItem, options outlineOptions) []O
 		item.Children = filterJSLikeOutlineProfile(item.Children, options)
 		if item.Depth > 0 && item.Metadata["node_type"] == "variable_declarator" {
 			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func filterCFamilyOutlineProfile(items []OutlineItem, options outlineOptions) []OutlineItem {
+	if options.outputProfile == outlineProfileFull || outlineHasExplicitDetailRequest(options) {
+		return items
+	}
+	return filterCFamilyOutlineItems(items, false, options)
+}
+
+func filterCFamilyOutlineItems(items []OutlineItem, insideCallable bool, options outlineOptions) []OutlineItem {
+	out := make([]OutlineItem, 0, len(items))
+	for _, item := range items {
+		itemInsideCallable := insideCallable || item.Kind == "function" || item.Kind == "method" || item.Kind == "constructor"
+		item.Children = filterCFamilyOutlineItems(item.Children, itemInsideCallable, options)
+		if item.Kind == "variable" && insideCallable {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func filterBashOutlineProfile(items []OutlineItem, options outlineOptions) []OutlineItem {
+	if options.outputProfile == outlineProfileFull || outlineHasExplicitDetailRequest(options) {
+		return items
+	}
+	seenTopLevelVariables := map[string]bool{}
+	return filterBashOutlineItems(items, options, seenTopLevelVariables)
+}
+
+func filterBashOutlineItems(items []OutlineItem, options outlineOptions, seenTopLevelVariables map[string]bool) []OutlineItem {
+	out := make([]OutlineItem, 0, len(items))
+	for _, item := range items {
+		item.Children = filterBashOutlineItems(item.Children, options, seenTopLevelVariables)
+		if item.Kind == "variable" {
+			if item.Depth > 0 {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(item.Name))
+			if key != "" && seenTopLevelVariables[key] {
+				continue
+			}
+			seenTopLevelVariables[key] = true
 		}
 		out = append(out, item)
 	}

@@ -18,6 +18,14 @@ const (
 	outlineLanguageTSX        = "tsx"
 	outlineLanguagePython     = "python"
 	outlineLanguageJava       = "java"
+	outlineLanguageRust       = "rust"
+	outlineLanguageC          = "c"
+	outlineLanguageCPP        = "cpp"
+	outlineLanguageCSharp     = "csharp"
+	outlineLanguageRuby       = "ruby"
+	outlineLanguageKotlin     = "kotlin"
+	outlineLanguageSwift      = "swift"
+	outlineLanguageBash       = "bash"
 	outlineLanguageJSON       = "json"
 	outlineLanguageYAML       = "yaml"
 	outlineLanguageSvelte     = "svelte"
@@ -129,7 +137,7 @@ func (h *Handler) HandleOutlineFile(ctx context.Context, req *mcp.CallToolReques
 			return outlineToolError(base, "outline_parse_threshold_exceeded")
 		}
 		output, err = h.outlineGo(ctx, info, options)
-	case outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
+	case outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageRust, outlineLanguageC, outlineLanguageCPP, outlineLanguageCSharp, outlineLanguageRuby, outlineLanguageKotlin, outlineLanguageSwift, outlineLanguageBash, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
 		if info.stat.Size() > h.config.WriteThreshold {
 			base.ParserStatus = "outline_parse_threshold_exceeded"
 			base.Warnings = append(base.Warnings, ToolWarning{
@@ -231,6 +239,22 @@ func outlineLanguage(requested, path string) string {
 			return outlineLanguagePython
 		case outlineLanguageJava:
 			return outlineLanguageJava
+		case outlineLanguageRust, "rs":
+			return outlineLanguageRust
+		case outlineLanguageC:
+			return outlineLanguageC
+		case outlineLanguageCPP, "c++", "cc", "cxx":
+			return outlineLanguageCPP
+		case outlineLanguageCSharp, "c#", "cs", "c_sharp":
+			return outlineLanguageCSharp
+		case outlineLanguageRuby, "rb":
+			return outlineLanguageRuby
+		case outlineLanguageKotlin, "kt", "kts":
+			return outlineLanguageKotlin
+		case outlineLanguageSwift:
+			return outlineLanguageSwift
+		case outlineLanguageBash, "sh", "shell":
+			return outlineLanguageBash
 		case outlineLanguageJSON:
 			return outlineLanguageJSON
 		case outlineLanguageYAML, "yml":
@@ -256,6 +280,24 @@ func outlineLanguage(requested, path string) string {
 		return outlineLanguagePython
 	case ".java":
 		return outlineLanguageJava
+	case ".rs":
+		return outlineLanguageRust
+	case ".c":
+		return outlineLanguageC
+	case ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx":
+		return outlineLanguageCPP
+	case ".h":
+		return outlineLanguageC
+	case ".cs":
+		return outlineLanguageCSharp
+	case ".rb":
+		return outlineLanguageRuby
+	case ".kt", ".kts":
+		return outlineLanguageKotlin
+	case ".swift":
+		return outlineLanguageSwift
+	case ".sh", ".bash":
+		return outlineLanguageBash
 	case ".json":
 		return outlineLanguageJSON
 	case ".yaml", ".yml":

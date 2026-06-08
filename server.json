@@ -26,7 +26,7 @@
     },
     {
       "name": "outline_file",
-      "description": "Inspect one absolute or cwd-relative file as a compact language-aware outline plus stable fingerprint and selectors. Agent profile hides TSX local variable noise and JSON/YAML value/wrapper noise while keeping key paths; full/filters expose details"
+      "description": "Inspect one absolute or cwd-relative file as a compact parser-backed outline plus stable fingerprint and selectors for Markdown, Go, JS/TS/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, and Svelte. Agent profile hides TSX local variable noise and JSON/YAML value/wrapper noise while keeping key paths; full/filters expose details"
     },
     {
       "name": "resolve_symbol_range",

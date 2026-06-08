@@ -213,7 +213,7 @@ func (h *Handler) outlineForSymbolResolution(ctx context.Context, info fileTextI
 		maxItems:        0,
 		maxDepth:        0,
 	}
-	if isJSLikeLanguage(language) || language == outlineLanguageJSON || language == outlineLanguageYAML {
+	if isJSLikeLanguage(language) || language == outlineLanguageC || language == outlineLanguageCPP || language == outlineLanguageBash || language == outlineLanguageJSON || language == outlineLanguageYAML {
 		options.outputProfile = outlineProfileFull
 	}
 	switch language {
@@ -224,7 +224,7 @@ func (h *Handler) outlineForSymbolResolution(ctx context.Context, info fileTextI
 			return outlineThresholdExceededOutput(info, language), nil
 		}
 		return h.outlineGo(ctx, info, options)
-	case outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
+	case outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageRust, outlineLanguageC, outlineLanguageCPP, outlineLanguageCSharp, outlineLanguageRuby, outlineLanguageKotlin, outlineLanguageSwift, outlineLanguageBash, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
 		if info.stat.Size() > h.config.WriteThreshold {
 			return outlineThresholdExceededOutput(info, language), nil
 		}
@@ -616,7 +616,7 @@ func normalizeTargetSyntaxMode(mode string) (string, error) {
 
 func isStructuredTargetLanguage(language string) bool {
 	switch language {
-	case outlineLanguageGo, outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
+	case outlineLanguageGo, outlineLanguageJavaScript, outlineLanguageTypeScript, outlineLanguageTSX, outlineLanguagePython, outlineLanguageJava, outlineLanguageRust, outlineLanguageC, outlineLanguageCPP, outlineLanguageCSharp, outlineLanguageRuby, outlineLanguageKotlin, outlineLanguageSwift, outlineLanguageBash, outlineLanguageJSON, outlineLanguageYAML, outlineLanguageSvelte:
 		return true
 	default:
 		return false
