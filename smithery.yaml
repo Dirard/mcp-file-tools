@@ -1,0 +1,24 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+# Read-only local filesystem MCP tools with complete single-response JSON output.
+
+runtime: container
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    additionalProperties: false
+    properties:
+      cwdStatePath:
+        type: string
+        description: Absolute writable server-local SQLite state path for cwd_id allocation. If omitted, set_cwd returns cwd_state_unavailable in this container runtime.
+  commandFunction: |-
+    (config) => {
+      const env = { MCP_CWD_REQUIRE_EXPLICIT_STATE_PATH: 'true' };
+      if (config.cwdStatePath) {
+        env.MCP_CWD_STATE_PATH = config.cwdStatePath;
+      }
+      return { command: './server', args: [], env };
+    }
+  exampleConfig:
+    cwdStatePath: "/state/cwd-state.sqlite"

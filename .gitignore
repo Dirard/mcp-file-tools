@@ -1,0 +1,62 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.txt
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependencies
+vendor/
+
+# Build output
+dist/
+logs/
+
+# IDE
+.vscode/
+!.vscode/*.example
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+
+# Temporary
+*.tmp
+*.temp
+
+# Local settings
+.claude/
+.env
+.env.local
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+# MCP Registry credentials
+.mcpregistry_*
+.mcpregistry*
+
+# MCP Publisher tool (built locally)
+mcp-publisher.exe
+mcp-publisher*
+checksums.txt
+tmp.json

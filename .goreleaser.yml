@@ -1,0 +1,56 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mcp-file-tools
+    main: ./cmd/mcp-file-tools
+    binary: mcp-file-tools
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X github.com/Dirard/mcp-file-tools/filetoolsserver.Version={{.Version}}
+
+archives:
+  - id: default
+    formats: ["tar.gz", "zip"]
+    files:
+      - README.md
+      - LICENSE
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+  # Also publish raw binaries for MCP registry (GoReleaser adds .exe automatically for Windows)
+  - id: binaries
+    formats: ["binary"]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: Dirard
+    name: mcp-file-tools
