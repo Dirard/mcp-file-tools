@@ -26,7 +26,7 @@ grep supports literal/regex search and returns search_stats plus file_groups wit
 
 Path tools accept absolute paths by default. With cwd_id, path inputs are cwd-relative and outputs include cwd metadata.
 
-outline_file is parser-backed for Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, and Svelte where supported. It returns fingerprint, imports/symbols/sections/enclosing_items and exact selectors. Default agent profile keeps TSX/JS/TS and JSON/YAML high-signal; full profile exposes local variables and config values.
+outline_file is parser-backed for Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, and Svelte where supported. Default agent output is compact: fingerprint, imports/symbols/sections/enclosing_items, ranges, and symbol_ref. Use include_write_metadata=true for selector/range proof fields; use full for local/noisy detail.
 
 workspace_inventory is directory-only: page completeness is continuation.page_complete, while summary/tree coverage is summary.summary_coverage_complete, summary.tree_scan_complete, summary.summary_incomplete_reason, and summary.scan_scope.
 
@@ -99,7 +99,7 @@ func NewServer(logger *slog.Logger, cfg *config.Config) *mcp.Server {
 		},
 	}, logger, "read_files", h.HandleReadFiles, h)
 
-	outlineFileDescription := `Inspect one file as a compact structure outline plus fingerprint. Parser-backed languages: Markdown, Go, JS/JSX, TS/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, Svelte. Default agent profile hides TSX local variable noise and JSON/YAML value/wrapper noise while keeping key paths; full/filters/enclosing_line expose details. Returns selectors, stats, and next calls.`
+	outlineFileDescription := `Inspect one file as a compact structure outline plus fingerprint. Parser-backed languages: Markdown, Go, JS/JSX, TS/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, Svelte. Default agent output keeps ranges/symbol_ref and hides write metadata; include_write_metadata=true returns selector/range proof fields; full exposes local/noisy detail.`
 
 	addStructuredToolWithOutputSchema(server, &mcp.Tool{
 		Name:        "outline_file",
@@ -261,7 +261,7 @@ func addStructuredToolWithOutputSchema[In, Out any](server *mcp.Server, tool *mc
 		}
 	}
 	handler.ApplyToolInputSchemaConstraints(inputSchema, toolName)
-	handler.ApplyPathOutputSchemaConstraints(outputSchema)
+	outputSchema = handler.ApplyToolOutputSchemaConstraints(outputSchema, toolName)
 	tool.InputSchema = inputSchema
 	tool.OutputSchema = outputSchema
 

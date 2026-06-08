@@ -209,7 +209,7 @@ type OutlineStats struct {
 }
 
 type OutlineItem struct {
-	ID               string            `json:"id"`
+	ID               string            `json:"id,omitempty"`
 	Kind             string            `json:"kind"`
 	Name             string            `json:"name"`
 	Detail           string            `json:"detail,omitempty"`
@@ -218,8 +218,8 @@ type OutlineItem struct {
 	Range            SourceLineRange   `json:"range"`
 	ByteRange        *SourceByteRange  `json:"byte_range,omitempty"`
 	Depth            int               `json:"depth,omitempty"`
-	Confidence       string            `json:"confidence"`
-	RangeIsEstimated bool              `json:"range_is_estimated"`
+	Confidence       string            `json:"confidence,omitempty"`
+	RangeIsEstimated bool              `json:"range_is_estimated,omitempty"`
 	RangeFingerprint *FileFingerprint  `json:"range_fingerprint,omitempty"`
 	Selector         *OutlineSelector  `json:"selector,omitempty"`
 	SymbolRef        string            `json:"symbol_ref,omitempty"`
@@ -339,38 +339,41 @@ type ResolveSymbolRangeOutput struct {
 
 type OutlineFileInput struct {
 	CwdAwareInput
-	TargetFile      string           `json:"target_file"`
-	Language        string           `json:"language,omitempty"`
-	OutputProfile   string           `json:"output_profile,omitempty"`
-	IncludeImports  bool             `json:"include_imports,omitempty"`
-	IncludeSymbols  bool             `json:"include_symbols,omitempty"`
-	IncludeSections bool             `json:"include_sections,omitempty"`
-	LineWindow      *SourceLineRange `json:"line_window,omitempty"`
-	EnclosingLine   *int             `json:"enclosing_line,omitempty"`
-	NameContains    string           `json:"name_contains,omitempty"`
-	Kinds           []string         `json:"kinds,omitempty"`
-	MaxItems        *int             `json:"max_items,omitempty"`
-	MaxDepth        *int             `json:"max_depth,omitempty"`
+	TargetFile           string           `json:"target_file"`
+	Language             string           `json:"language,omitempty"`
+	OutputProfile        string           `json:"output_profile,omitempty"`
+	IncludeWriteMetadata bool             `json:"include_write_metadata,omitempty"`
+	IncludeImports       bool             `json:"include_imports,omitempty"`
+	IncludeSymbols       bool             `json:"include_symbols,omitempty"`
+	IncludeSections      bool             `json:"include_sections,omitempty"`
+	LineWindow           *SourceLineRange `json:"line_window,omitempty"`
+	EnclosingLine        *int             `json:"enclosing_line,omitempty"`
+	NameContains         string           `json:"name_contains,omitempty"`
+	Kinds                []string         `json:"kinds,omitempty"`
+	MaxItems             *int             `json:"max_items,omitempty"`
+	MaxDepth             *int             `json:"max_depth,omitempty"`
 }
 
 type OutlineFileOutput struct {
 	CwdOutputMeta
-	Text                string           `json:"-"`
-	Error               string           `json:"error,omitempty"`
-	File                string           `json:"file,omitempty"`
-	Language            string           `json:"language,omitempty"`
-	ParserStatus        string           `json:"parser_status,omitempty"`
-	ParserScope         string           `json:"parser_scope,omitempty"`
-	Fingerprint         *FileFingerprint `json:"fingerprint,omitempty"`
-	Imports             []OutlineItem    `json:"imports"`
-	Symbols             []OutlineItem    `json:"symbols"`
-	Sections            []OutlineItem    `json:"sections"`
-	EnclosingItems      []OutlineItem    `json:"enclosing_items,omitempty"`
-	OutlineStats        OutlineStats     `json:"outline_stats"`
-	Truncated           bool             `json:"truncated"`
-	Warnings            []ToolWarning    `json:"warnings"`
-	NextRecommendedCall *ActionHint      `json:"next_recommended_call,omitempty"`
-	ErrorCode           string           `json:"error_code,omitempty"`
+	publicOutputProfile        string
+	publicIncludeWriteMetadata bool
+	Text                       string           `json:"-"`
+	Error                      string           `json:"error,omitempty"`
+	File                       string           `json:"file,omitempty"`
+	Language                   string           `json:"language,omitempty"`
+	ParserStatus               string           `json:"parser_status,omitempty"`
+	ParserScope                string           `json:"parser_scope,omitempty"`
+	Fingerprint                *FileFingerprint `json:"fingerprint,omitempty"`
+	Imports                    []OutlineItem    `json:"imports"`
+	Symbols                    []OutlineItem    `json:"symbols"`
+	Sections                   []OutlineItem    `json:"sections"`
+	EnclosingItems             []OutlineItem    `json:"enclosing_items,omitempty"`
+	OutlineStats               OutlineStats     `json:"outline_stats"`
+	Truncated                  bool             `json:"truncated"`
+	Warnings                   []ToolWarning    `json:"warnings"`
+	NextRecommendedCall        *ActionHint      `json:"next_recommended_call,omitempty"`
+	ErrorCode                  string           `json:"error_code,omitempty"`
 }
 
 type TargetPrecondition struct {

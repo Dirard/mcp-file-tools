@@ -141,7 +141,7 @@ func OutlineFileOutputSchema() *jsonschema.Schema {
 			"children":           &jsonschema.Schema{Type: "array", Items: outlineItemRef},
 			"metadata":           objectSchema(),
 		},
-		Required:             []string{"id", "kind", "name", "range", "confidence", "range_is_estimated"},
+		Required:             []string{"kind", "name", "range"},
 		AdditionalProperties: falseSchema,
 	}
 	schema.Defs["source_byte_range"] = &jsonschema.Schema{

@@ -124,6 +124,7 @@ func (h *Handler) executeSingleRangeTransferWithOptions(ctx context.Context, pat
 	output.SourceFingerprintBefore = &plan.sourceInfo.fingerprint
 	output.SourceFingerprintCheckedAtWrite = &plan.sourceInfo.fingerprint
 	output.SourceFingerprintForNextWrite = &plan.sourceInfo.fingerprint
+	output.Validation.NextRecommendedCall = dryRunValidationReadHint(output)
 	if plan.targetInfo != nil {
 		output.TargetFingerprintBefore = &plan.targetInfo.fingerprint
 	}
@@ -278,6 +279,34 @@ func (h *Handler) executeSingleRangeTransferWithOptions(ctx context.Context, pat
 	output.Applied = true
 	output.BackupDiscovery = backupDiscoveryForResults(pathCtx, output.BackupResults)
 	return output, nil
+}
+
+func dryRunValidationReadHint(output RangeTransferOutput) *ActionHint {
+	if !output.DryRun || output.SourceFile == "" || len(output.RequestedRanges) == 0 {
+		return nil
+	}
+	r := output.RequestedRanges[0]
+	input := map[string]any{
+		"target_file": output.SourceFile,
+		"start_line":  r.StartLine,
+		"end_line":    r.EndLine,
+	}
+	if output.SourceFingerprintForNextWrite != nil {
+		input["expected_version"] = ReadCoverageProof{
+			SizeBytes:        output.SourceFingerprintForNextWrite.SizeBytes,
+			ModifiedUnixNano: output.SourceFingerprintForNextWrite.ModifiedUnixNano,
+			SHA256:           output.SourceFingerprintForNextWrite.SHA256,
+			ProofStrength:    "exact",
+			Range:            r,
+		}
+	}
+	return &ActionHint{
+		SafeToRetry:                true,
+		RecommendedNextTool:        "read_file",
+		RecommendedNextInput:       input,
+		RecommendedNextInputPolicy: "verify_escape_sensitive_preview",
+		Reason:                     "Previews are bounded display text; for escape-sensitive edits, verify with read_file/read-back before applying.",
+	}
 }
 
 func (h *Handler) buildSingleTransferPlan(ctx context.Context, input CopyRangesInput, operation, sourceResolved, sourceDisplay, targetResolved, targetDisplay string) (singleTransferPlan, error) {

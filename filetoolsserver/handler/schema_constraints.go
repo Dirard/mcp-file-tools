@@ -58,6 +58,270 @@ func ApplyPathOutputSchemaConstraints(schema *jsonschema.Schema) {
 	applyPathSchemaConstraints(schema, pathOutputSchemaFields, false)
 }
 
+func ApplyToolOutputSchemaConstraints(schema *jsonschema.Schema, toolName string) *jsonschema.Schema {
+	ApplyPathOutputSchemaConstraints(schema)
+	return AgentOutputSchemaForTool(toolName, schema)
+}
+
+// AgentOutputSchemaForTool returns the compact schema advertised through MCP
+// tool metadata. Runtime outputs stay richer and compatible because additional
+// properties remain allowed; the schema names the fields agents most often use
+// to continue workflows without carrying the full nested DTO graph in discovery.
+func AgentOutputSchemaForTool(toolName string, fallback *jsonschema.Schema) *jsonschema.Schema {
+	fields, ok := agentOutputSchemaFields[toolName]
+	if !ok {
+		return fallback
+	}
+	schema := &jsonschema.Schema{
+		Type:       "object",
+		Properties: map[string]*jsonschema.Schema{},
+	}
+	for _, field := range fields {
+		schema.Properties[field.name] = compactSchemaForField(field.kind)
+		schema.PropertyOrder = append(schema.PropertyOrder, field.name)
+	}
+	for _, field := range commonAgentOutputSchemaFields {
+		if schema.Properties[field.name] == nil {
+			schema.Properties[field.name] = compactSchemaForField(field.kind)
+			schema.PropertyOrder = append(schema.PropertyOrder, field.name)
+		}
+	}
+	ApplyPathOutputSchemaConstraints(schema)
+	return schema
+}
+
+type agentOutputSchemaField struct {
+	name string
+	kind string
+}
+
+var commonAgentOutputSchemaFields = []agentOutputSchemaField{
+	{"cwd_id", "integer"},
+	{"cwd", "string"},
+	{"action_hint", "object"},
+	{"error", "string"},
+	{"error_code", "string"},
+}
+
+var agentOutputSchemaFields = map[string][]agentOutputSchemaField{
+	"read_file": {
+		{"text", "string"},
+		{"file", "string"},
+		{"requested_range", "object"},
+		{"range", "object"},
+		{"total_lines", "integer"},
+		{"total_lines_known", "boolean"},
+		{"coverage", "object"},
+		{"continuation", "object"},
+		{"redacted", "boolean"},
+		{"redaction_mode", "string"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"read_files": {
+		{"items", "array"},
+		{"coverage", "object"},
+		{"continuation", "object"},
+		{"count", "integer"},
+		{"redaction_mode", "string"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"list_dir": {
+		{"directory", "string"},
+		{"entries", "array"},
+		{"count", "integer"},
+		{"include_hidden", "boolean"},
+		{"include_vcs_metadata", "boolean"},
+		{"dot_entries_skipped", "boolean"},
+		{"hidden_entries_included", "integer"},
+		{"vcs_entries_skipped", "integer"},
+		{"vcs_entries_included", "integer"},
+		{"message", "string"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"glob_file_search": {
+		{"pattern", "string"},
+		{"target_directory", "string"},
+		{"files", "file_match_array"},
+		{"count", "integer"},
+		{"total_match_count", "integer"},
+		{"truncated", "boolean"},
+		{"groups", "array"},
+		{"search_stats", "object"},
+		{"continuation", "object"},
+		{"next_recommended_call", "object"},
+		{"next_recommended_calls", "array"},
+		{"message", "string"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"grep": {
+		{"matches", "array"},
+		{"files", "path_array"},
+		{"counts", "array"},
+		{"search_stats", "object"},
+		{"file_groups", "array"},
+		{"next_recommended_call", "object"},
+		{"next_recommended_calls", "array"},
+		{"message", "string"},
+		{"redaction_mode", "string"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"inspect_path": {
+		{"path", "string"},
+		{"resolved_path", "string"},
+		{"exists", "boolean"},
+		{"kind", "string"},
+		{"size_bytes", "integer"},
+		{"line_count", "integer"},
+		{"symlink_target", "string"},
+		{"mime_hint", "string"},
+		{"encoding", "string"},
+		{"visibility", "object"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"workspace_inventory": {
+		{"root", "object"},
+		{"directories_page", "array"},
+		{"summary", "object"},
+		{"continuation", "object"},
+		{"max_depth", "integer"},
+		{"limit", "integer"},
+		{"directory_count", "integer"},
+		{"ignored_directory_count", "integer"},
+		{"truncated", "boolean"},
+		{"truncation_reason", "string"},
+		{"max_depth_reached", "boolean"},
+		{"next_recommended_call", "object"},
+		{"next_recommended_calls", "array"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"outline_file": {
+		{"file", "string"},
+		{"language", "string"},
+		{"parser_status", "string"},
+		{"fingerprint", "object"},
+		{"imports", "array"},
+		{"symbols", "array"},
+		{"sections", "array"},
+		{"enclosing_items", "array"},
+		{"outline_stats", "object"},
+		{"truncated", "boolean"},
+		{"warnings", "array"},
+		{"next_recommended_call", "object"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"resolve_symbol_range": {
+		{"file", "string"},
+		{"language", "string"},
+		{"parser_status", "string"},
+		{"fingerprint", "object"},
+		{"matches", "array"},
+		{"resolved_ranges", "array"},
+		{"ambiguous", "boolean"},
+		{"resolution_status", "string"},
+		{"next_recommended_call", "object"},
+		{"next_recommended_calls", "array"},
+		{"recommended_write_call", "object"},
+		{"preview_write_call", "object"},
+		{"write_recommendation_status", "string"},
+		{"action_hint", "object"},
+		{"error", "string"},
+		{"error_code", "string"},
+	},
+	"copy_ranges":       rangeToolAgentOutputSchemaFields(),
+	"move_ranges":       rangeToolAgentOutputSchemaFields(),
+	"copy_ranges_batch": batchRangeToolAgentOutputSchemaFields(),
+	"move_ranges_batch": batchRangeToolAgentOutputSchemaFields(),
+}
+
+func rangeToolAgentOutputSchemaFields() []agentOutputSchemaField {
+	return []agentOutputSchemaField{
+		{"operation", "string"},
+		{"dry_run", "boolean"},
+		{"applied", "boolean"},
+		{"source_file", "string"},
+		{"target_file", "string"},
+		{"requested_ranges", "array"},
+		{"ranges", "array"},
+		{"target_placement", "object"},
+		{"would_write_bytes", "integer"},
+		{"bytes_written", "integer"},
+		{"source_fingerprint_for_next_write", "object"},
+		{"target_fingerprint_for_next_write", "object"},
+		{"boundary_warnings", "array"},
+		{"warnings", "array"},
+		{"diff_previews", "array"},
+		{"joiner_effect", "object"},
+		{"boundary_preview", "object"},
+		{"validation", "object"},
+		{"backup_paths", "path_array"},
+		{"backup_discovery", "object"},
+		{"partial_state", "object"},
+		{"action_hint", "object"},
+		{"error", "string"},
+		{"error_code", "string"},
+	}
+}
+
+func batchRangeToolAgentOutputSchemaFields() []agentOutputSchemaField {
+	return []agentOutputSchemaField{
+		{"operation", "string"},
+		{"dry_run", "boolean"},
+		{"applied", "boolean"},
+		{"source_file", "string"},
+		{"target_results", "target_result_array"},
+		{"targets_written", "path_array"},
+		{"source_diff_previews", "array"},
+		{"source_validation", "object"},
+		{"warnings", "array"},
+		{"backup_discovery", "object"},
+		{"partial_state", "object"},
+		{"action_hint", "object"},
+		{"error", "string"},
+		{"error_code", "string"},
+	}
+}
+
+func compactSchemaForField(kind string) *jsonschema.Schema {
+	switch kind {
+	case "array":
+		return &jsonschema.Schema{Type: "array"}
+	case "path_array":
+		return &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Type: "string"}}
+	case "file_match_array":
+		return &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{
+			Type: "object",
+			Properties: map[string]*jsonschema.Schema{
+				"path": {Type: "string"},
+			},
+			PropertyOrder: []string{"path"},
+		}}
+	case "boolean":
+		return &jsonschema.Schema{Type: "boolean"}
+	case "integer":
+		return &jsonschema.Schema{Type: "integer"}
+	case "object":
+		return &jsonschema.Schema{Type: "object"}
+	case "target_result_array":
+		return &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{
+			Type: "object",
+			Properties: map[string]*jsonschema.Schema{
+				"target_file": {Type: "string"},
+			},
+			PropertyOrder: []string{"target_file"},
+		}}
+	default:
+		return &jsonschema.Schema{Type: "string"}
+	}
+}
+
 func applyPathSchemaConstraints(schema *jsonschema.Schema, pathFields map[string]bool, input bool) {
 	visited := map[*jsonschema.Schema]bool{}
 	walkPathSchema(schema, pathFields, visited, input)

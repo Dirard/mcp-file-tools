@@ -97,16 +97,17 @@ func (h *Handler) HandleOutlineFile(ctx context.Context, req *mcp.CallToolReques
 		return outlineToolError(base, "enclosing_line must be a 1-based positive line number")
 	}
 	options := outlineOptions{
-		includeImports:  input.IncludeImports,
-		includeSymbols:  input.IncludeSymbols,
-		includeSections: input.IncludeSections,
-		lineWindow:      input.LineWindow,
-		enclosingLine:   input.EnclosingLine,
-		nameContains:    input.NameContains,
-		kinds:           input.Kinds,
-		outputProfile:   outputProfile,
-		maxItems:        maxItems,
-		maxDepth:        maxDepth,
+		includeImports:       input.IncludeImports,
+		includeSymbols:       input.IncludeSymbols,
+		includeSections:      input.IncludeSections,
+		includeWriteMetadata: input.IncludeWriteMetadata || outputProfile == outlineProfileFull,
+		lineWindow:           input.LineWindow,
+		enclosingLine:        input.EnclosingLine,
+		nameContains:         input.NameContains,
+		kinds:                input.Kinds,
+		outputProfile:        outputProfile,
+		maxItems:             maxItems,
+		maxDepth:             maxDepth,
 	}
 	options.applyIncludeDefaults()
 
@@ -171,20 +172,22 @@ func (h *Handler) HandleOutlineFile(ctx context.Context, req *mcp.CallToolReques
 	}
 	applyOutlineTruncationHint(pathCtx, &output, input)
 	applyOutlineCompactProfileHint(pathCtx, &output, input)
+	output = projectOutlineOutput(output, options)
 	return structuredResultOnly(), output, nil
 }
 
 type outlineOptions struct {
-	includeImports  bool
-	includeSymbols  bool
-	includeSections bool
-	lineWindow      *SourceLineRange
-	enclosingLine   *int
-	nameContains    string
-	kinds           []string
-	outputProfile   string
-	maxItems        int
-	maxDepth        int
+	includeImports       bool
+	includeSymbols       bool
+	includeSections      bool
+	includeWriteMetadata bool
+	lineWindow           *SourceLineRange
+	enclosingLine        *int
+	nameContains         string
+	kinds                []string
+	outputProfile        string
+	maxItems             int
+	maxDepth             int
 }
 
 func (o *outlineOptions) applyIncludeDefaults() {
@@ -336,6 +339,9 @@ func outlineOutputProfileRetryHint(pathCtx PathContext, targetFile string, input
 	if strings.TrimSpace(input.Language) != "" {
 		nextInput["language"] = input.Language
 	}
+	if input.IncludeWriteMetadata {
+		nextInput["include_write_metadata"] = true
+	}
 	addCwdIDToRecommendedInput(pathCtx, "outline_file", nextInput)
 	return &ActionHint{
 		SafeToRetry:                true,
@@ -373,6 +379,9 @@ func applyOutlineTruncationHint(pathCtx PathContext, output *OutlineFileOutput, 
 	}
 	if input.IncludeSections {
 		nextInput["include_sections"] = true
+	}
+	if input.IncludeWriteMetadata {
+		nextInput["include_write_metadata"] = true
 	}
 	if input.MaxItems != nil {
 		nextInput["max_items"] = *input.MaxItems + defaultOutlineMaxDepth

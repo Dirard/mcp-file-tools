@@ -2,7 +2,7 @@
 
 Сервер предоставляет 14 кроссплатформенных MCP tools, адаптированных из `mr-agent` references под локальную файловую систему и быстрые agent refactor workflows.
 
-Пути интерпретируются ОС, на которой запущен MCP-сервер: POSIX paths вроде `/path/to/repo` на Linux/macOS, Windows paths вроде `D:/path/to/repo` на Windows. Без `cwd_id` path inputs остаются absolute-only: подставляй реальный полный путь ОС сервера. С `cwd_id` path inputs должны быть относительными к cwd, зарегистрированному через `set_cwd`; absolute path вместе с `cwd_id` отклоняется. Path-поля в успешных ответах без `cwd_id` возвращаются slash-normalized absolute/display paths; с `cwd_id` ответ содержит absolute `cwd`, а остальные filesystem path-поля возвращаются cwd-relative, без leading `./`. Каждый успешный вызов возвращает полный результат в одном structured JSON ответе со своей output schema для каждого инструмента; `cursor` и `nextCursor` не используются.
+Пути интерпретируются ОС, на которой запущен MCP-сервер: POSIX paths вроде `/path/to/repo` на Linux/macOS, Windows paths вроде `D:/path/to/repo` на Windows. Без `cwd_id` path inputs остаются absolute-only: подставляй реальный полный путь ОС сервера. С `cwd_id` path inputs должны быть относительными к cwd, зарегистрированному через `set_cwd`; absolute path вместе с `cwd_id` отклоняется. Path-поля в успешных ответах без `cwd_id` возвращаются slash-normalized absolute/display paths; с `cwd_id` ответ содержит absolute `cwd`, а остальные filesystem path-поля возвращаются cwd-relative, без leading `./`. Каждый успешный вызов возвращает полный результат в одном structured JSON ответе; advertised output schema компактная и перечисляет основные top-level поля, при этом runtime JSON может содержать дополнительные structured поля. `cursor` и `nextCursor` не используются.
 
 Ошибки возвращаются для агента структурно: MCP result помечается `isError=true`, plain-text MCP content пустой, а actionable сообщение находится в поле `error` конкретной output schema.
 
@@ -150,7 +150,7 @@ Output:
 - `language="auto"` определяет Markdown, Go, JavaScript/JSX, TypeScript/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML и Svelte.
 - Markdown outline возвращает ATX headings с range до следующего heading того же или меньшего уровня; headings внутри fenced code blocks игнорируются.
 - Go outline возвращает `import_block`, `const_block`, `var_block`, `type_block` items с полным block range и children для отдельных specs, плюс functions и methods через `go/parser`.
-- Tree-sitter outline для JS/TS/TSX/Python/Java/Rust/C/C++/C#/Ruby/Kotlin/Swift/Bash/JSON/YAML/Svelte возвращает selector metadata: `symbol_ref`, `symbol_path`, `byte_range`, `whole_line_range`, `write_safe` и `range_fingerprint`.
+- Tree-sitter outline для JS/TS/TSX/Python/Java/Rust/C/C++/C#/Ruby/Kotlin/Swift/Bash/JSON/YAML/Svelte в default `agent` output возвращает compact navigation fields: `kind`, `name`, `range`, `symbol_ref`, path context и children. `include_write_metadata=true` добавляет selector/range proof fields: `selector`, `byte_range`, `whole_line_range`, `write_safe` и `range_fingerprint`.
 - Source-bearing JS/TS exports like `export { x } from "pkg"` are reported as `kind="re_export"` outside `import_block`; exported declarations remain normal symbols.
 - JS/TS/TSX default `output_profile="agent"` keeps high-signal top-level declarations/components and hides duplicate declaration/local-variable noise; `output_profile="full"`, `kinds`, `name_contains`, `line_window`, and `enclosing_line` expose details when needed.
 - JSON/YAML config nodes are exact for navigation, but `write_safe=false` by default because moving/deleting delimiter-separated structured nodes can require comma/indent/token repair outside the selected line range.
@@ -160,7 +160,7 @@ Output:
 - JSON/YAML config kinds are normalized for filtering: `document`, `object`, `array`, `property`, `value`, `stream`, `mapping`, `sequence`, `key`.
 - Svelte currently returns exact block/markup ranges and `parser_status="partial"` with a nested-symbol warning; nested script symbol extraction is future-gated.
 - Unsupported text получает generic text outline с honest synthetic chunks; binary/undecodable files не получают fake structure.
-- Каждый exact outline item содержит `confidence="exact"`, `range_is_estimated=false` и `range_fingerprint` как fingerprint snapshot файла, для которого этот range был рассчитан; same-line/delimiter-sensitive items могут быть exact для чтения, но `write_safe=false`.
+- Default `agent` output скрывает повторяющиеся exact trust/write поля; estimated/low-confidence items остаются помечены. Для write workflows передавай `symbol_ref` или `range` вместе с top-level `fingerprint` в `resolve_symbol_range`. `include_write_metadata=true` возвращает item-level proof fields; `output_profile="full"` возвращает подробный debug/local/noisy output.
 - `output_profile="fingerprint_only"` возвращает только fingerprint и cheap metadata.
 - `line_window`, `enclosing_line`, `name_contains`, `kinds`, `max_items` и `max_depth` ограничивают output без cursor state; `enclosing_line` возвращает innermost item и parent chain в `enclosing_items`.
 - Если output обрезан по `max_items`, `next_recommended_call` содержит bounded `line_window`; если исходный `max_items` был слишком мал для enclosing context, recommended call может поднять его на небольшой depth budget.
@@ -172,6 +172,7 @@ Input:
 {
   "target_file": "/path/to/repo/concept.md",
   "language": "auto",
+  "include_write_metadata": false,
   "include_sections": true,
   "max_items": 80,
   "max_depth": 3
@@ -184,6 +185,7 @@ Copyable examples:
 {"target_file":"/path/to/repo/concept.md","language":"markdown","max_items":80}
 {"target_file":"/path/to/repo/file.go","language":"go","include_imports":true,"include_symbols":true}
 {"target_file":"/path/to/repo/src/App.tsx","language":"auto","enclosing_line":42}
+{"target_file":"/path/to/repo/src/App.tsx","include_write_metadata":true}
 {"target_file":"/path/to/repo/huge.md","output_profile":"fingerprint_only"}
 ```
 
@@ -205,27 +207,17 @@ Output:
   "symbols": [],
   "sections": [
     {
-      "id": "section:1",
       "kind": "section",
       "name": "Заголовок 1",
       "range": {"start_line": 1, "end_line": 500},
-      "confidence": "exact",
-      "range_is_estimated": false,
-      "range_fingerprint": {
-        "sha256": "abc123...",
-        "size_bytes": 12000,
-        "line_count": 500,
-        "modified_unix_nano": 1780403400000000000
-      },
+      "symbol_ref": "markdown:section:...",
       "depth": 1,
       "children": [
         {
-          "id": "section:2",
           "kind": "section",
           "name": "Заголовок 2",
           "range": {"start_line": 3, "end_line": 300},
-          "confidence": "exact",
-          "range_is_estimated": false,
+          "symbol_ref": "markdown:section:...",
           "depth": 2
         }
       ]
@@ -244,10 +236,10 @@ Output:
 Использование:
 
 - `source_fingerprint` обязателен и обычно берется из `outline_file`; stale fingerprint возвращает `symbol_fingerprint_mismatch`.
-- `selector` поддерживает `symbol_ref`, `kind`/`name`, `symbol_path`, `range`+`range_fingerprint`, `disambiguator` и `enclosing_line`.
+- `selector` поддерживает `symbol_ref`, `kind`/`name`, `symbol_path`, `range` с top-level `source_fingerprint` proof, optional `range_fingerprint`, `disambiguator` и `enclosing_line`.
 - Без `target_intent` tool read-only: возвращает `matches`, `resolved_ranges` и read/refresh hints.
 - С `target_intent` tool все равно не мутирует файлы; он может вернуть `recommended_write_call` только как `dry_run=true` input для `copy_ranges` или `move_ranges`.
-- Write recommendation появляется только для одного exact `write_safe` whole-line range: parser-backed `parser_status="ok"` или ручного exact `selector.range` с текущим `range_fingerprint` (`parser_status="range_selector"`), не same-file target и доказанного target syntax: `create_new`, clean Markdown target или explicit non-structured `plain_text`.
+- Write recommendation появляется только для одного exact `write_safe` whole-line range: parser-backed `parser_status="ok"` или ручного exact `selector.range` под текущим top-level `source_fingerprint` (`parser_status="range_selector"`; `range_fingerprint` optional stale check), не same-file target и доказанного target syntax: `create_new`, clean Markdown target или explicit non-structured `plain_text`.
 - `target_intent.target_precondition` можно опустить для подготовки: resolver сам вложит `must_not_exist=true` для missing `create_new` target или свежий fingerprint для существующего readable text target.
 - `target_intent.dry_run` можно опустить; recommended write input всегда принудительно содержит `dry_run=true`. Apply выполняется отдельным явным вызовом range-tool после preview/read-back.
 

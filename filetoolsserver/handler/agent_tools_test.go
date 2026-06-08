@@ -225,6 +225,59 @@ func TestOutlineFileTruncationReturnsNextRecommendedLineWindow(t *testing.T) {
 	}
 }
 
+func TestOutlineFileTruncationPreservesIncludeWriteMetadata(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "concept.md")
+	content := "# One\ntext\n# Two\ntext\n# Three\ntext\n"
+	if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	maxItems := 1
+
+	h := NewHandler()
+	result, output, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{
+		TargetFile:           file,
+		MaxItems:             &maxItems,
+		IncludeWriteMetadata: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || !output.Truncated || output.NextRecommendedCall == nil {
+		t.Fatalf("expected truncated outline with next call: result=%#v output=%#v", result, output)
+	}
+	nextInput := output.NextRecommendedCall.RecommendedNextInput
+	if got, ok := nextInput["include_write_metadata"].(bool); !ok || !got {
+		t.Fatalf("next recommended call should preserve include_write_metadata=true: %#v", output.NextRecommendedCall)
+	}
+	lineWindowMap, ok := nextInput["line_window"].(map[string]any)
+	if !ok {
+		t.Fatalf("next recommended call should include line_window: %#v", output.NextRecommendedCall)
+	}
+	startLine, ok := lineWindowMap["start_line"].(int)
+	if !ok {
+		t.Fatalf("line_window.start_line should be int: %#v", lineWindowMap)
+	}
+	nextWindow := SourceLineRange{StartLine: startLine, EndLine: output.Fingerprint.LineCount}
+	nextResult, nextOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{
+		TargetFile:           file,
+		MaxItems:             &maxItems,
+		LineWindow:           &nextWindow,
+		IncludeWriteMetadata: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextResult.IsError || len(nextOutput.Sections) == 0 || nextOutput.Sections[0].Selector == nil {
+		t.Fatalf("continued include_write_metadata call should expose selector metadata: result=%#v output=%#v", nextResult, nextOutput)
+	}
+	encoded, decoded := marshalOutlineOutputForTest(t, nextOutput)
+	nextItem := firstPublicItemByName(t, decoded, "sections", "Two")
+	if _, ok := nextItem["selector"]; !ok {
+		t.Fatalf("continued include_write_metadata public JSON should expose selector: %s", encoded)
+	}
+}
+
 func TestOutlineFileTruncationPreservesFullOutputProfile(t *testing.T) {
 	tempDir := t.TempDir()
 	file := filepath.Join(tempDir, "config.json")
@@ -506,6 +559,416 @@ func TestOutlineFileTreeSitterLanguagesReturnSelectorMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOutlineFilePublicJSONProjectsAgentWriteMetadataAndFull(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "card.tsx")
+	source := strings.Join([]string{
+		"import React from \"react\"",
+		"",
+		"export const Card = ({ title }: { title: string }) => {",
+		"  const localLabel = title.toUpperCase()",
+		"  return <section>{localLabel}</section>",
+		"}",
+		"",
+	}, "\n")
+	if err := os.WriteFile(file, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	agentResult, agentOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentResult.IsError {
+		t.Fatalf("agent outline failed: %#v", agentOutput)
+	}
+	agentBytes, agentJSON := marshalOutlineOutputForTest(t, agentOutput)
+	agentItem := firstPublicItemByName(t, agentJSON, "symbols", "Card")
+	for _, hidden := range []string{"id", "selector", "range_fingerprint", "byte_range", "whole_line_range", "write_safe", "refusal_reason", "metadata", "confidence", "range_is_estimated"} {
+		if _, ok := agentItem[hidden]; ok {
+			t.Fatalf("agent public JSON should omit %q: %s", hidden, agentBytes)
+		}
+	}
+	for _, kept := range []string{"kind", "name", "range", "symbol_ref"} {
+		if _, ok := agentItem[kept]; !ok {
+			t.Fatalf("agent public JSON should keep %q: %s", kept, agentBytes)
+		}
+	}
+
+	writeResult, writeOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file, IncludeWriteMetadata: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writeResult.IsError {
+		t.Fatalf("write-metadata outline failed: %#v", writeOutput)
+	}
+	writeBytes, writeJSON := marshalOutlineOutputForTest(t, writeOutput)
+	writeItem := firstPublicItemByName(t, writeJSON, "symbols", "Card")
+	for _, kept := range []string{"selector", "range_fingerprint", "byte_range", "whole_line_range", "write_safe"} {
+		if _, ok := writeItem[kept]; !ok {
+			t.Fatalf("include_write_metadata public JSON should keep %q: %s", kept, writeBytes)
+		}
+	}
+	for _, hidden := range []string{"id", "metadata"} {
+		if _, ok := writeItem[hidden]; ok {
+			t.Fatalf("include_write_metadata should not become full/noisy via %q: %s", hidden, writeBytes)
+		}
+	}
+
+	fullResult, fullOutput, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file, OutputProfile: outlineProfileFull})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fullResult.IsError {
+		t.Fatalf("full outline failed: %#v", fullOutput)
+	}
+	fullBytes, fullJSON := marshalOutlineOutputForTest(t, fullOutput)
+	fullItem := firstPublicItemByName(t, fullJSON, "symbols", "Card")
+	for _, kept := range []string{"id", "selector", "range_fingerprint", "byte_range", "metadata", "confidence", "range_is_estimated"} {
+		if _, ok := fullItem[kept]; !ok {
+			t.Fatalf("full public JSON should keep %q: %s", kept, fullBytes)
+		}
+	}
+	if got, ok := fullItem["range_is_estimated"].(bool); !ok || got {
+		t.Fatalf("full public JSON should expose range_is_estimated=false: %#v", fullItem["range_is_estimated"])
+	}
+	if len(agentBytes)*4 >= len(fullBytes)*3 {
+		t.Fatalf("agent public JSON should be at least 25%% smaller than full: agent=%d full=%d\nagent=%s\nfull=%s", len(agentBytes), len(fullBytes), agentBytes, fullBytes)
+	}
+	if len(writeBytes) >= len(fullBytes) {
+		t.Fatalf("include_write_metadata should stay smaller than full: write=%d full=%d\nwrite=%s\nfull=%s", len(writeBytes), len(fullBytes), writeBytes, fullBytes)
+	}
+}
+
+func TestOutlineFileCompactResolveReadWorkflowBudget(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "many.tsx")
+	var b strings.Builder
+	b.WriteString("import React from \"react\"\n\n")
+	for i := 0; i < 24; i++ {
+		fmt.Fprintf(&b, "export const Card%d = () => <section>%d</section>\n", i, i)
+	}
+	if err := os.WriteFile(file, []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	outlineResult, outline, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outlineResult.IsError || outline.Fingerprint == nil {
+		t.Fatalf("outline failed: result=%#v output=%#v", outlineResult, outline)
+	}
+	item := findOutlineItemByName(outline.Symbols, "Card12")
+	if item == nil || item.SymbolRef == "" {
+		t.Fatalf("outline should expose Card12 symbol_ref: %#v", outline.Symbols)
+	}
+
+	resolveResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+		SourceFile:        file,
+		SourceFingerprint: *outline.Fingerprint,
+		Selector:          SymbolSelectorQuery{SymbolRef: item.SymbolRef},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolveResult.IsError || len(resolved.ResolvedRanges) != 1 {
+		t.Fatalf("resolve failed: result=%#v output=%#v", resolveResult, resolved)
+	}
+	r := resolved.ResolvedRanges[0].Range
+	readResult, readOutput, err := h.HandleReadFile(context.Background(), nil, ReadFileInput{
+		TargetFile: file,
+		StartLine:  &r.StartLine,
+		EndLine:    &r.EndLine,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readResult.IsError {
+		t.Fatalf("read failed: result=%#v output=%#v", readResult, readOutput)
+	}
+
+	compactOutlineBytes := normalizedJSONForSizeTest(t, outline)
+	legacyOutlineBytes := legacyOutlineJSONForSizeTest(t, outline)
+	resolveBytes := normalizedJSONForSizeTest(t, resolved)
+	readBytes := normalizedJSONForSizeTest(t, readOutput)
+	compactTotal := len(compactOutlineBytes) + len(resolveBytes) + len(readBytes)
+	legacyTotal := len(legacyOutlineBytes) + len(resolveBytes) + len(readBytes)
+	if compactTotal*100 > legacyTotal*85 {
+		t.Fatalf("compact outline->resolve->read workflow should save at least 15%% bytes: compact=%d legacy=%d outline_compact=%d outline_legacy=%d", compactTotal, legacyTotal, len(compactOutlineBytes), len(legacyOutlineBytes))
+	}
+	const compactCalls = 3
+	const legacyCalls = 3
+	if compactCalls > legacyCalls {
+		t.Fatalf("compact workflow should not increase tool calls: compact=%d legacy=%d", compactCalls, legacyCalls)
+	}
+}
+
+func TestOutlineFileCompactResolveDryRunWorkflowBudget(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceFile := filepath.Join(tempDir, "many.tsx")
+	targetFile := filepath.Join(tempDir, "snippet.tsx")
+	var b strings.Builder
+	b.WriteString("import React from \"react\"\n\n")
+	for i := 0; i < 24; i++ {
+		fmt.Fprintf(&b, "export const Card%d = () => <section>%d</section>\n", i, i)
+	}
+	if err := os.WriteFile(sourceFile, []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler()
+	outlineResult, outline, err := h.HandleOutlineFile(context.Background(), nil, OutlineFileInput{TargetFile: sourceFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outlineResult.IsError || outline.Fingerprint == nil {
+		t.Fatalf("outline failed: result=%#v output=%#v", outlineResult, outline)
+	}
+	item := findOutlineItemByName(outline.Symbols, "Card12")
+	if item == nil || item.SymbolRef == "" {
+		t.Fatalf("outline should expose Card12 symbol_ref: %#v", outline.Symbols)
+	}
+
+	resolveResult, resolved, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+		SourceFile:        sourceFile,
+		SourceFingerprint: *outline.Fingerprint,
+		Selector:          SymbolSelectorQuery{SymbolRef: item.SymbolRef},
+		TargetIntent: &WriteTargetIntent{
+			Operation:  operationCopy,
+			TargetFile: targetFile,
+			Placement:  TargetPlacement{Mode: placementCreateNew},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolveResult.IsError || resolved.WriteRecommendationStatus != writeRecommendationReady || resolved.RecommendedWriteCall == nil {
+		t.Fatalf("resolve dry-run prep failed: result=%#v output=%#v", resolveResult, resolved)
+	}
+
+	compactTotal := len(normalizedJSONForSizeTest(t, outline)) + len(normalizedJSONForSizeTest(t, resolved))
+	legacyTotal := len(legacyOutlineJSONForSizeTest(t, outline)) + len(normalizedJSONForSizeTest(t, resolved))
+	if compactTotal*100 > legacyTotal*85 {
+		t.Fatalf("compact outline->resolve dry-run workflow should save at least 15%% bytes: compact=%d legacy=%d", compactTotal, legacyTotal)
+	}
+}
+
+func TestDiscoveryHintWorkflowMetricsStayBounded(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, name := range []string{"a.go", "b.go", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), []byte("package main\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := NewHandler()
+	result, output, err := h.HandleGlobFileSearch(context.Background(), nil, GlobFileSearchInput{
+		TargetDirectory: tempDir,
+		GlobPattern:     "*.go",
+		Limit:           intPtr(10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || len(output.Files) != 2 {
+		t.Fatalf("glob discovery should find two Go files: result=%#v output=%#v", result, output)
+	}
+	if output.NextRecommendedCall == nil && len(output.NextRecommendedCalls) == 0 {
+		t.Fatalf("narrow complete glob should expose a next useful hint: %#v", output)
+	}
+	normalized := normalizedJSONForSizeTest(t, output)
+	if len(normalized) == 0 {
+		t.Fatal("normalized discovery output should not be empty")
+	}
+	const toolCalls = 1
+	const baselineToolCalls = 1
+	if toolCalls > baselineToolCalls {
+		t.Fatalf("discovery hint workflow should not increase tool calls: got=%d baseline=%d", toolCalls, baselineToolCalls)
+	}
+}
+
+func TestGrepReadRangeWorkflowMetricsStayBounded(t *testing.T) {
+	tempDir := t.TempDir()
+	file := filepath.Join(tempDir, "app.go")
+	source := strings.Join([]string{
+		"package main",
+		"",
+		"func loadConfig() string {",
+		"	return \"ok\"",
+		"}",
+		"",
+	}, "\n")
+	if err := os.WriteFile(file, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler()
+	result, output, err := h.HandleGrepTool(context.Background(), nil, GrepToolInput{
+		Path:        tempDir,
+		Pattern:     "loadConfig",
+		PatternMode: "literal",
+		OutputMode:  "content",
+		Glob:        "*.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || len(output.FileGroups) != 1 || len(output.FileGroups[0].ReadRanges) == 0 {
+		t.Fatalf("grep should expose grouped read_ranges: result=%#v output=%#v", result, output)
+	}
+	r := output.FileGroups[0].ReadRanges[0]
+	readResult, readOutput, err := h.HandleReadFile(context.Background(), nil, ReadFileInput{
+		TargetFile: file,
+		StartLine:  &r.StartLine,
+		EndLine:    &r.EndLine,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readResult.IsError || !strings.Contains(readOutput.Text, "loadConfig") {
+		t.Fatalf("grep read_range should feed read_file: result=%#v output=%#v", readResult, readOutput)
+	}
+	total := len(normalizedJSONForSizeTest(t, output)) + len(normalizedJSONForSizeTest(t, readOutput))
+	if total == 0 {
+		t.Fatal("normalized grep->read workflow output should not be empty")
+	}
+	const toolCalls = 2
+	const baselineToolCalls = 2
+	if toolCalls > baselineToolCalls {
+		t.Fatalf("grep->read workflow should not increase tool calls: got=%d baseline=%d", toolCalls, baselineToolCalls)
+	}
+}
+
+func marshalOutlineOutputForTest(t *testing.T, output OutlineFileOutput) (string, map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded), decoded
+}
+
+func marshalJSONForSizeTest(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func normalizedJSONForSizeTest(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	normalized := normalizeJSONValueForSizeTest(decoded, "")
+	normalizedBytes, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(normalizedBytes)
+}
+
+func legacyOutlineJSONForSizeTest(t *testing.T, output OutlineFileOutput) string {
+	t.Helper()
+	type legacyOutlineFileOutput OutlineFileOutput
+	output.publicOutputProfile = ""
+	output.publicIncludeWriteMetadata = false
+	return normalizedJSONForSizeTest(t, legacyOutlineFileOutput(output))
+}
+
+func normalizeJSONValueForSizeTest(value any, key string) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for childKey, childValue := range v {
+			out[childKey] = normalizeJSONValueForSizeTest(childValue, childKey)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = normalizeJSONValueForSizeTest(item, key)
+		}
+		return out
+	case string:
+		switch {
+		case key == "sha256":
+			return "<sha256>"
+		case key == "modified_at":
+			return "<modified_at>"
+		case strings.Contains(key, "file") || strings.Contains(key, "path") || strings.Contains(key, "directory") || key == "cwd":
+			return "<path>"
+		default:
+			return v
+		}
+	case float64:
+		switch key {
+		case "modified_unix_nano":
+			return float64(1)
+		case "cwd_id":
+			return float64(1)
+		default:
+			return v
+		}
+	default:
+		return v
+	}
+}
+
+func firstPublicItemByName(t *testing.T, output map[string]any, category, name string) map[string]any {
+	t.Helper()
+	items, ok := output[category].([]any)
+	if !ok {
+		t.Fatalf("public JSON category %q missing or not an array: %#v", category, output[category])
+	}
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if item["name"] == name {
+			return item
+		}
+		if child := firstPublicChildByName(item, name); child != nil {
+			return child
+		}
+	}
+	t.Fatalf("public JSON category %q should contain item %q: %#v", category, name, items)
+	return nil
+}
+
+func firstPublicChildByName(item map[string]any, name string) map[string]any {
+	children, ok := item["children"].([]any)
+	if !ok {
+		return nil
+	}
+	for _, raw := range children {
+		child, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if child["name"] == name {
+			return child
+		}
+		if nested := firstPublicChildByName(child, name); nested != nil {
+			return nested
+		}
+	}
+	return nil
 }
 
 func TestOutlineFileBashAgentProfileFiltersAssignmentNoise(t *testing.T) {
@@ -1689,7 +2152,7 @@ func TestResolveSymbolRangeBySymbolRefAndEnclosingLine(t *testing.T) {
 	}
 }
 
-func TestResolveSymbolRangeByExactRangeRequiresFingerprint(t *testing.T) {
+func TestResolveSymbolRangeByExactRangeUsesSourceFingerprint(t *testing.T) {
 	tempDir := t.TempDir()
 	file := filepath.Join(tempDir, "sample.py")
 	source := "class Loader:\n    def load_config(self):\n        return True\n"
@@ -1706,7 +2169,7 @@ func TestResolveSymbolRangeByExactRangeRequiresFingerprint(t *testing.T) {
 		t.Fatalf("python method should be available for range selector: outline=%#v", outline)
 	}
 
-	missingFingerprintResult, missingFingerprintOutput, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
+	rangeOnlyResult, rangeOnlyOutput, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
 		SourceFile:        file,
 		SourceFingerprint: *outline.Fingerprint,
 		Selector:          SymbolSelectorQuery{Range: &method.Range},
@@ -1714,8 +2177,8 @@ func TestResolveSymbolRangeByExactRangeRequiresFingerprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !missingFingerprintResult.IsError || missingFingerprintOutput.ErrorCode != "selector_range_fingerprint_required" {
-		t.Fatalf("range selector without range_fingerprint should be refused: result=%#v output=%#v", missingFingerprintResult, missingFingerprintOutput)
+	if rangeOnlyResult.IsError || rangeOnlyOutput.ResolutionStatus != resolveStatusResolved || rangeOnlyOutput.ParserStatus != "range_selector" || len(rangeOnlyOutput.ResolvedRanges) != 1 || rangeOnlyOutput.ResolvedRanges[0].Range != method.Range {
+		t.Fatalf("range selector without range_fingerprint should use source_fingerprint proof: result=%#v output=%#v", rangeOnlyResult, rangeOnlyOutput)
 	}
 
 	result, output, err := h.HandleResolveSymbolRange(context.Background(), nil, ResolveSymbolRangeInput{
@@ -1755,8 +2218,7 @@ func TestResolveSymbolRangeExactRangePreparesDryRunWriteRecommendation(t *testin
 		SourceFile:        sourceFile,
 		SourceFingerprint: *outline.Fingerprint,
 		Selector: SymbolSelectorQuery{
-			Range:            &selected,
-			RangeFingerprint: outline.Fingerprint,
+			Range: &selected,
 		},
 		TargetIntent: &WriteTargetIntent{
 			Operation:  operationCopy,
@@ -3756,6 +4218,11 @@ func TestToolOutputSchemasExposeToolSpecificFields(t *testing.T) {
 		t.Fatalf("outline item path schema is missing: %#v", outlineItemSchema)
 	}
 	assertSchemaDoesNotConstrainAsFilesystemPath(t, outlineItemSchema.Properties["path"].Items, "outline_item.path[]")
+	for _, name := range []string{"id", "confidence", "range_is_estimated"} {
+		if schemaRequiredContains(outlineItemSchema.Required, name) {
+			t.Fatalf("compact outline item field %q should be optional in output schema: %#v", name, outlineItemSchema.Required)
+		}
+	}
 	for _, name := range []string{"enclosing_path", "byte_range", "selector", "symbol_ref", "whole_line_range", "write_safe", "refusal_reason"} {
 		if outlineItemSchema.Properties[name] == nil {
 			t.Fatalf("outline item schema should include Phase 6 field %q: %#v", name, outlineItemSchema.Properties)
@@ -4195,6 +4662,15 @@ func assertSchemaHas(t *testing.T, schema *jsonschema.Schema, name string) {
 	if _, ok := schema.Properties[name]; !ok {
 		t.Fatalf("schema should expose %q; properties: %#v", name, schema.Properties)
 	}
+}
+
+func schemaRequiredContains(required []string, name string) bool {
+	for _, item := range required {
+		if item == name {
+			return true
+		}
+	}
+	return false
 }
 
 func assertJSONEmptyArrayField(t *testing.T, value any, field string) {

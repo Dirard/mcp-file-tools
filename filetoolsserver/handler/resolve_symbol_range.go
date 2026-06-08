@@ -76,12 +76,7 @@ func (h *Handler) HandleResolveSymbolRange(ctx context.Context, req *mcp.CallToo
 			base.ErrorCode = "invalid_selector_range"
 			return errorResult(base.Error), base, nil
 		}
-		if input.Selector.RangeFingerprint == nil {
-			base.Error = "selector_range_fingerprint_required: selector.range requires selector.range_fingerprint"
-			base.ErrorCode = "selector_range_fingerprint_required"
-			return errorResult(base.Error), base, nil
-		}
-		if !fingerprintsEqual(info.fingerprint, *input.Selector.RangeFingerprint) {
+		if input.Selector.RangeFingerprint != nil && !fingerprintsEqual(info.fingerprint, *input.Selector.RangeFingerprint) {
 			base.Error = "symbol_fingerprint_mismatch: selector.range_fingerprint is stale; refresh outline_file and retry"
 			base.ErrorCode = "symbol_fingerprint_mismatch"
 			base.ResolutionStatus = resolveStatusStale
@@ -380,7 +375,7 @@ func (h *Handler) populateWriteRecommendation(ctx context.Context, pathCtx PathC
 	resolved := output.ResolvedRanges[0]
 	if output.ParserStatus != "ok" && output.ParserStatus != "range_selector" {
 		output.WriteRefusalCode = "symbol_parser_not_write_safe"
-		output.WriteRefusalReason = "Parser status must be ok, or selector.range must be exact with a current range_fingerprint, before resolver can recommend a write preview."
+		output.WriteRefusalReason = "Parser status must be ok, or selector.range must be exact under the current source_fingerprint, before resolver can recommend a write preview."
 		return false
 	}
 	if resolved.RangeIsEstimated {

@@ -255,6 +255,39 @@ func TestMCPToolCallReturnsToolSpecificStructuredOutput(t *testing.T) {
 	}
 }
 
+func TestPhase10RegisteredListToolsMetadataStaysCompact(t *testing.T) {
+	withMCPTestSession(t, nil, func(ctx context.Context, session *mcp.ClientSession) {
+		tools, err := session.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tools.Tools) != 14 {
+			t.Fatalf("registered tool count = %d, want 14", len(tools.Tools))
+		}
+		metadataBytes, err := json.Marshal(tools.Tools)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if os.Getenv("MCP_FILE_TOOLS_PRINT_PHASE10_LEDGER") != "" {
+			t.Logf("registered ListTools metadata bytes: %d", len(metadataBytes))
+		}
+		if len(metadataBytes) > 70000 {
+			t.Fatalf("registered ListTools metadata grew beyond Phase 10 compact budget: got=%d max=70000", len(metadataBytes))
+		}
+		for _, tool := range tools.Tools {
+			if tool.InputSchema == nil || tool.OutputSchema == nil {
+				t.Fatalf("tool %s should advertise input and output schemas", tool.Name)
+			}
+			if tool.Name != "set_cwd" {
+				output := decodeToolInputSchema(t, tool.OutputSchema)
+				if output.Type != "object" {
+					t.Fatalf("tool %s compact output schema should stay top-level object, got %#v", tool.Name, output)
+				}
+			}
+		}
+	})
+}
+
 func TestMCPSetCwdEnablesRelativePathTools(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
