@@ -60,3 +60,6 @@ mcp-publisher.exe
 mcp-publisher*
 checksums.txt
 tmp.json
+
+# Codex worktrees
+.worktrees/
