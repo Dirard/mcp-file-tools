@@ -1,5 +1,7 @@
 .git
 .github
+.codegraph
+.superpowers
 dist
 vendor
 logs
@@ -7,7 +9,6 @@ logs
 .env
 .env.local
 .env.*
-!.env.example
 .envrc
 .direnv/
 .mcpregistry*

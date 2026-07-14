@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Dirard/mcp-file-tools",
   "title": "MCP File Tools",
-  "description": "Cross-platform MCP file tools with cwd_id relative path mode, complete single-response JSON output, and safe refactor helpers",
+  "description": "Token-efficient read-only project navigation over stdio with compact text results",
   "repository": {
     "url": "https://github.com/Dirard/mcp-file-tools",
     "source": "github"
@@ -14,59 +14,19 @@
   "tools": [
     {
       "name": "set_cwd",
-      "description": "Register one absolute directory and receive a small cwd_id for cwd-relative path calls"
+      "description": "Register an absolute local directory and return cwd_id."
     },
     {
-      "name": "read_file",
-      "description": "Read one absolute or cwd-relative file or line range as compact line-numbered text with JSON metadata"
+      "name": "project",
+      "description": "List a bounded project tree under cwd_id with resumable pagination."
     },
     {
-      "name": "read_files",
-      "description": "Batch-read absolute or cwd-relative files and line ranges with coverage, continuation, literal output by default, and explicit strict redaction"
+      "name": "search",
+      "description": "Find files, text lines, or symbols under cwd_id with resumable pagination."
     },
     {
-      "name": "outline_file",
-      "description": "Inspect one absolute or cwd-relative file as a compact parser-backed outline plus stable fingerprint and selectors for Markdown, Go, JS/TS/TSX, Python, Java, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, JSON, YAML, and Svelte. Agent profile hides TSX local variable noise and JSON/YAML value/wrapper noise while keeping key paths; full/filters expose details"
-    },
-    {
-      "name": "resolve_symbol_range",
-      "description": "Resolve outline selectors or enclosing lines to concrete ranges and prepared dry-run copy/move recommendations"
-    },
-    {
-      "name": "copy_ranges",
-      "description": "Copy exact line ranges from one absolute or cwd-relative source file into one explicit target with fingerprints, dry-run, diff preview, joiner diagnostics, validation/read-back, and optional backup; verify escape-sensitive edits with read_file"
-    },
-    {
-      "name": "move_ranges",
-      "description": "Move exact line ranges from one absolute or cwd-relative source file into one explicit target with target/source diff preview and read-back validation; verify escape-sensitive edits with read_file"
-    },
-    {
-      "name": "copy_ranges_batch",
-      "description": "Copy exact line ranges from one absolute or cwd-relative source snapshot into multiple explicit targets with per-target structured results"
-    },
-    {
-      "name": "move_ranges_batch",
-      "description": "Move exact line ranges from one absolute or cwd-relative source snapshot into multiple explicit targets and remove source ranges once"
-    },
-    {
-      "name": "list_dir",
-      "description": "List direct children of one absolute or cwd-relative directory as JSON entries"
-    },
-    {
-      "name": "glob_file_search",
-      "description": "Recursively find files under one absolute or cwd-relative directory by glob pattern with sort, continuation, hidden flags, JSON matches, and bounded read/outline next calls"
-    },
-    {
-      "name": "grep",
-      "description": "Agent-friendly grep under one absolute or cwd-relative path with literal/regex modes, search stats, file groups, read ranges, and schema-valid read/outline next calls"
-    },
-    {
-      "name": "inspect_path",
-      "description": "Inspect one absolute or cwd-relative file-system path as JSON metadata"
-    },
-    {
-      "name": "workspace_inventory",
-      "description": "Build a directories-only JSON inventory tree/page/summary with directory-level glob hints and explicit page vs summary/tree coverage fields"
+      "name": "read",
+      "description": "Read source ranges or parser outlines for up to 24 files under cwd_id."
     }
   ]
 }

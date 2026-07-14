@@ -6,9 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write  # Required for MCP Registry OIDC auth
+  contents: read
 
 jobs:
   test:
@@ -34,6 +32,8 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -53,4 +53,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

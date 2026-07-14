@@ -12,6 +12,9 @@ on:
       - 'LICENSE'
       - '.gitignore'
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -32,6 +35,3 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
-
-      - name: Test all server operations
-        run: go run test_server.go

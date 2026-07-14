@@ -23,7 +23,6 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X github.com/Dirard/mcp-file-tools/filetoolsserver.Version={{.Version}}
 
 archives:
   - id: default
@@ -33,7 +32,7 @@ archives:
       - LICENSE
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
-  # Also publish raw binaries for MCP registry (GoReleaser adds .exe automatically for Windows)
+  # Also publish raw binaries for direct installation (GoReleaser adds .exe on Windows)
   - id: binaries
     formats: ["binary"]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"

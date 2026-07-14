@@ -63,3 +63,6 @@ tmp.json
 
 # Codex worktrees
 .worktrees/
+
+# CodeGraph index
+.codegraph/

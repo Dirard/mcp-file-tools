@@ -1,4 +1,4 @@
-.PHONY: build test lint clean install run help
+.PHONY: build test test-rootfs-platforms lint clean install run help
 
 BINARY_NAME=mcp-file-tools
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -13,6 +13,10 @@ build:
 ## test: Run tests
 test:
 	go test -v -race ./...
+
+## test-rootfs-platforms: Compile rootfs tests for every release platform/architecture
+test-rootfs-platforms:
+	bash scripts/test-rootfs-platforms.sh
 
 ## test-cover: Run tests with coverage
 test-cover:
