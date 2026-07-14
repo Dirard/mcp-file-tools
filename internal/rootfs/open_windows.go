@@ -17,6 +17,7 @@ const (
 	windowsShareMode        = windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE
 	windowsDirectoryAccess  = windows.FILE_LIST_DIRECTORY | windows.FILE_TRAVERSE | windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
 	windowsRegularAccess    = windows.FILE_READ_DATA | windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
+	windowsMetadataAccess   = windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
 	windowsSearchAccess     = windowsRegularAccess
 	windowsDirectoryOptions = windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
 	windowsRegularOptions   = windows.FILE_NON_DIRECTORY_FILE | windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
@@ -246,7 +247,7 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
 	defer windows.CloseHandle(parent)
-	handleValue, err := openWindowsSearchRelative(parent, components[len(components)-1])
+	handleValue, err := openWindowsSearchRelative(parent, components[len(components)-1], windowsSearchAccess)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
@@ -347,7 +348,7 @@ func openWindowsRelative(parent windows.Handle, component string, directory bool
 	return handle, nil
 }
 
-func openWindowsSearchRelative(parent windows.Handle, component string) (windows.Handle, error) {
+func openWindowsSearchRelative(parent windows.Handle, component string, access uint32) (windows.Handle, error) {
 	objectName, err := windows.NewNTUnicodeString(component)
 	if err != nil {
 		return windows.InvalidHandle, ErrIO
@@ -362,7 +363,7 @@ func openWindowsSearchRelative(parent windows.Handle, component string) (windows
 	var status windows.IO_STATUS_BLOCK
 	err = windows.NtCreateFile(
 		&handle,
-		windowsSearchAccess,
+		access,
 		&attributes,
 		&status,
 		nil,
