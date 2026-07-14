@@ -2,6 +2,7 @@ package navigation
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/Dirard/mcp-file-tools/internal/api"
 	"github.com/Dirard/mcp-file-tools/internal/jsonwire"
@@ -21,9 +22,10 @@ func (connection *Connection) SetCWD(ctx context.Context, raw []byte, work *runt
 		work.MarkNoCommit()
 		return errorExecution(work, api.ErrorBudgetExceeded)
 	}
-	directory, code := decodeSetCWDArguments(raw)
+	var detail inputErrorDetail
+	directory, code := decodeSetCWDArguments(raw, &detail)
 	if code != "" {
-		return errorExecution(work, code)
+		return inputErrorExecution(work, code, detail)
 	}
 	root, err := rootfs.OpenRoot(directory)
 	if err != nil {
@@ -36,7 +38,7 @@ func (connection *Connection) SetCWD(ctx context.Context, raw []byte, work *runt
 	return ordinary(work, api.SetCWD(uint64(id)))
 }
 
-func decodeSetCWDArguments(raw []byte) (pathspec.RootDirectory, api.ErrorCode) {
+func decodeSetCWDArguments(raw []byte, detail *inputErrorDetail) (pathspec.RootDirectory, api.ErrorCode) {
 	object, err := jsonwire.ScanObject(raw, toolArgumentLimits, jsonwire.ToolArguments)
 	if err != nil || len(object.Members()) != 1 {
 		return pathspec.RootDirectory{}, api.ErrorInvalidInput
@@ -49,5 +51,9 @@ func decodeSetCWDArguments(raw []byte) (pathspec.RootDirectory, api.ErrorCode) {
 	if !ok {
 		return pathspec.RootDirectory{}, api.ErrorInvalidInput
 	}
-	return pathspec.ParseRootDirectory(hostTarget(), directory)
+	parsed, code := pathspec.ParseRootDirectory(hostTarget(), directory)
+	if code == api.ErrorInvalidInput && !filepath.IsAbs(directory) {
+		detail.set("directory", "absolute_path_required")
+	}
+	return parsed, code
 }

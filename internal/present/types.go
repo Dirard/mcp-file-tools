@@ -26,6 +26,13 @@ func Error(code api.ErrorCode) api.Result {
 	return api.Navigation("ERROR\t"+string(code)+"\n", true)
 }
 
+func InputError(field, reason string) api.Result {
+	if field == "" || reason == "" {
+		return Error(api.ErrorInvalidInput)
+	}
+	return api.Navigation("ERROR\tinvalid_input\tfield="+field+"\treason="+reason+"\n", true)
+}
+
 func validStatusCursor(status Status, cursor Cursor) bool {
 	switch status {
 	case Complete:

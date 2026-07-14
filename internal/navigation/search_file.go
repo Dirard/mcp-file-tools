@@ -18,9 +18,10 @@ func (connection *Connection) Search(ctx context.Context, raw []byte, work *runt
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	arguments, code := decodeSearchArguments(raw)
+	var detail inputErrorDetail
+	arguments, code := decodeSearchArguments(raw, &detail)
 	if code != "" {
-		return errorExecution(work, code)
+		return inputErrorExecution(work, code, detail)
 	}
 	if arguments.kind == continuationArguments {
 		return connection.continueDynamic(ctx, arguments.continuation, api.ToolSearch, work)

@@ -31,6 +31,18 @@ type Connection struct {
 	Cursors *cursor.Registry
 }
 
+type inputErrorDetail struct {
+	field  string
+	reason string
+}
+
+func (detail *inputErrorDetail) set(field, reason string) {
+	if detail != nil {
+		detail.field = field
+		detail.reason = reason
+	}
+}
+
 func (connection *Connection) valid() bool {
 	return connection != nil && connection.Service != nil && connection.Service.CWD != nil &&
 		connection.Service.Scanner != nil && connection.Service.ScanLimiter != nil && connection.Cursors != nil
@@ -68,6 +80,13 @@ func ordinaryOwnedElsewhere(result api.Result) runtimepkg.Execution {
 
 func errorExecution(work *runtimepkg.WorkLease, code api.ErrorCode) runtimepkg.Execution {
 	return ordinary(work, present.Error(code))
+}
+
+func inputErrorExecution(work *runtimepkg.WorkLease, code api.ErrorCode, detail inputErrorDetail) runtimepkg.Execution {
+	if code == api.ErrorInvalidInput && detail.field != "" && detail.reason != "" {
+		return ordinary(work, present.InputError(detail.field, detail.reason))
+	}
+	return errorExecution(work, code)
 }
 
 func rootfsErrorCode(err error) api.ErrorCode {

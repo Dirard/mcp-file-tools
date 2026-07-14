@@ -42,9 +42,10 @@ func (connection *Connection) Read(ctx context.Context, raw []byte, work *runtim
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	arguments, code := decodeReadArguments(raw)
+	var detail inputErrorDetail
+	arguments, code := decodeReadArguments(raw, &detail)
 	if code != "" {
-		return errorExecution(work, code)
+		return inputErrorExecution(work, code, detail)
 	}
 	if arguments.kind == continuationArguments {
 		return connection.continueRead(ctx, arguments.continuation, work)

@@ -90,7 +90,7 @@ func TestDecodeSearchArguments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			arguments, code := decodeSearchArguments([]byte(test.raw))
+			arguments, code := decodeSearchArguments([]byte(test.raw), nil)
 			if (code == "") != test.wantOK {
 				t.Fatalf("code = %q", code)
 			}
@@ -143,7 +143,7 @@ func TestDecodeReadArguments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			arguments, code := decodeReadArguments([]byte(test.raw))
+			arguments, code := decodeReadArguments([]byte(test.raw), nil)
 			if (code == "") != test.wantOK {
 				t.Fatalf("code = %q", code)
 			}

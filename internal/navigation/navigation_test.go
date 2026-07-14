@@ -258,6 +258,43 @@ func TestSetCWDRegistersOneStableRoot(t *testing.T) {
 	}
 }
 
+func TestInvalidInputExplainsKnownFields(t *testing.T) {
+	fixture := newNavigationFixture(t, map[string]string{"main.go": "package main\n"})
+	tests := []struct {
+		name string
+		run  func() runtimepkg.Execution
+		want string
+	}{
+		{
+			name: "relative directory",
+			run:  func() runtimepkg.Execution { return fixture.setCWD(t, `{"directory":"relative"}`) },
+			want: "ERROR\tinvalid_input\tfield=directory\treason=absolute_path_required\n",
+		},
+		{
+			name: "invalid regex",
+			run: func() runtimepkg.Execution {
+				return fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"(","regex":true}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=query\treason=invalid_re2_expression\n",
+		},
+		{
+			name: "max bytes below minimum",
+			run: func() runtimepkg.Execution {
+				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go","end":1}],"max_bytes":2048}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=max_bytes\treason=minimum_is_4096\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			execution := test.run()
+			if !execution.Result.IsError() || resultText(t, execution) != test.want {
+				t.Fatalf("result = %q, want %q", resultText(t, execution), test.want)
+			}
+		})
+	}
+}
+
 type navigationFixture struct {
 	connection *Connection
 	cwdID      uint64

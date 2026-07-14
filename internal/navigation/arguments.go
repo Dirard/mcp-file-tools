@@ -146,7 +146,7 @@ func decodeProjectArguments(raw []byte) (projectArguments, api.ErrorCode) {
 	}, ""
 }
 
-func decodeSearchArguments(raw []byte) (searchArguments, api.ErrorCode) {
+func decodeSearchArguments(raw []byte, detail *inputErrorDetail) (searchArguments, api.ErrorCode) {
 	object, err := jsonwire.ScanObject(raw, toolArgumentLimits, jsonwire.ToolArguments)
 	if err != nil {
 		return searchArguments{}, api.ErrorInvalidInput
@@ -214,6 +214,9 @@ func decodeSearchArguments(raw []byte) (searchArguments, api.ErrorCode) {
 		compiledGlob = &compiled
 	} else {
 		if _, err := compileSearchMatcher(query, regex, ignoreCase); err != nil {
+			if regex {
+				detail.set("query", "invalid_re2_expression")
+			}
 			return searchArguments{}, api.ErrorInvalidInput
 		}
 		if _, present := object.Member("glob"); present {
@@ -267,7 +270,7 @@ func decodeSearchArguments(raw []byte) (searchArguments, api.ErrorCode) {
 	}, ""
 }
 
-func decodeReadArguments(raw []byte) (readArguments, api.ErrorCode) {
+func decodeReadArguments(raw []byte, detail *inputErrorDetail) (readArguments, api.ErrorCode) {
 	object, err := jsonwire.ScanObject(raw, toolArgumentLimits, jsonwire.ToolArguments)
 	if err != nil {
 		return readArguments{}, api.ErrorInvalidInput
@@ -305,6 +308,17 @@ func decodeReadArguments(raw []byte) (readArguments, api.ErrorCode) {
 	}
 	maxBytes, ok := decodeUintMember(object, "max_bytes", 4096, 32768, false)
 	if !ok {
+		if value, present := object.Value("max_bytes"); present && value.Kind() == jsonwire.Number {
+			decimal, err := jsonwire.ParseDecimal(value.Bytes())
+			if err == nil && decimal.IsInteger() {
+				switch {
+				case decimal.CompareUint64(4096) < 0:
+					detail.set("max_bytes", "minimum_is_4096")
+				case decimal.CompareUint64(32768) > 0:
+					detail.set("max_bytes", "maximum_is_32768")
+				}
+			}
+		}
 		return readArguments{}, api.ErrorInvalidInput
 	}
 	if _, present := object.Member("max_bytes"); !present {
