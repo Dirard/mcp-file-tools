@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -149,11 +150,15 @@ func TestScannerSkipsAReplacedFrontierFile(t *testing.T) {
 	}
 
 	bPath := filepath.Join(fixture, "b.txt")
+	replacementPath := filepath.Join(fixture, "replacement.tmp")
+	if err := os.WriteFile(replacementPath, []byte("replacement"), 0o644); err != nil {
+		t.Fatalf("WriteFile replacement: %v", err)
+	}
 	if err := os.Remove(bPath); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if err := os.WriteFile(bPath, []byte("replacement"), 0o644); err != nil {
-		t.Fatalf("WriteFile replacement: %v", err)
+	if err := os.Rename(replacementPath, bPath); err != nil {
+		t.Fatalf("Rename replacement: %v", err)
 	}
 	ctx, work = scannerWork(t, "replace-continuation")
 	type result struct {
@@ -185,7 +190,7 @@ func TestExplicitFileContinuationRetainsDescriptorsWithoutIO(t *testing.T) {
 	root, lease, _ := openFixtureRoot(t, fixture)
 	defer root.Close()
 	defer lease.Close()
-	filePath, code := pathspec.ParseRelative(pathspec.POSIX, "one.txt", false)
+	filePath, code := pathspec.ParseRelative(scannerHostTarget(), "one.txt", false)
 	if code != "" {
 		t.Fatalf("ParseRelative: %q", code)
 	}
@@ -274,7 +279,8 @@ func scannerWork(t *testing.T, id string) (context.Context, *runtimepkg.WorkLeas
 
 func openFixtureRoot(t *testing.T, directory string) (*rootfs.Root, *rootfs.Lease, pathspec.Relative) {
 	t.Helper()
-	rootPath, code := pathspec.ParseRootDirectory(pathspec.POSIX, directory)
+	target := scannerHostTarget()
+	rootPath, code := pathspec.ParseRootDirectory(target, filepath.ToSlash(directory))
 	if code != "" {
 		t.Fatalf("ParseRootDirectory: %q", code)
 	}
@@ -287,13 +293,20 @@ func openFixtureRoot(t *testing.T, directory string) (*rootfs.Root, *rootfs.Leas
 		root.Close()
 		t.Fatalf("Duplicate: %v", err)
 	}
-	requested, code := pathspec.ParseRelative(pathspec.POSIX, ".", true)
+	requested, code := pathspec.ParseRelative(target, ".", true)
 	if code != "" {
 		lease.Close()
 		root.Close()
 		t.Fatalf("ParseRelative root: %q", code)
 	}
 	return root, lease, requested
+}
+
+func scannerHostTarget() pathspec.TargetOS {
+	if runtime.GOOS == "windows" {
+		return pathspec.Windows
+	}
+	return pathspec.POSIX
 }
 
 func writeFixtureFile(t *testing.T, root, relative, content string) {

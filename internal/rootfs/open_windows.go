@@ -18,7 +18,7 @@ const (
 	windowsDirectoryAccess  = windows.FILE_LIST_DIRECTORY | windows.FILE_TRAVERSE | windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
 	windowsRegularAccess    = windows.FILE_READ_DATA | windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
 	windowsSearchAccess     = windowsRegularAccess
-	windowsDirectoryOptions = windows.FILE_DIRECTORY_FILE | windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
+	windowsDirectoryOptions = windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
 	windowsRegularOptions   = windows.FILE_NON_DIRECTORY_FILE | windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
 	windowsSearchOptions    = windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
 	windowsMaxFinalPath     = windows.MAX_LONG_PATH
@@ -136,21 +136,11 @@ func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Id
 		return platformDir{}, Identity{}, ErrInvalidTarget
 	}
 	if path.String() == "." {
-		handleValue, err := openWindowsRelative(root.handle, ".", true)
+		handleValue, identity, err := reopenWindowsDirectory(root)
 		if err != nil {
 			return platformDir{}, Identity{}, err
 		}
-		handle := platformDir{handle: handleValue, valid: true, resolved: path}
-		identity, err := verifyWindowsHandleIdentity(handleValue, root.volume, true)
-		if err != nil {
-			_ = closePlatformDir(&handle)
-			return platformDir{}, Identity{}, err
-		}
-		if identity != root.identity {
-			_ = closePlatformDir(&handle)
-			return platformDir{}, Identity{}, ErrSourceChanged
-		}
-		return handle, identity, nil
+		return platformDir{handle: handleValue, valid: true, resolved: path}, identity, nil
 	}
 	components := path.Components()
 	parent, actual, err := openWindowsParent(root, components)
@@ -171,7 +161,7 @@ func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Id
 		_ = windows.CloseHandle(handleValue)
 		return platformDir{}, Identity{}, ErrSourceChanged
 	}
-	if err := verifyWindowsAncestry(handleValue, len(components), root); err != nil {
+	if err := verifyWindowsPathContained(handleValue, root); err != nil {
 		_ = windows.CloseHandle(handleValue)
 		return platformDir{}, Identity{}, err
 	}
@@ -200,7 +190,7 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 		return platformFile{}, Identity{}, err
 	}
 	defer windows.CloseHandle(parent)
-	handle, identity, actualName, err := openWindowsRegularAt(root, parent, len(components)-1, components[len(components)-1])
+	handle, identity, actualName, err := openWindowsRegularAt(root, parent, components[len(components)-1])
 	if err != nil {
 		return platformFile{}, Identity{}, err
 	}
@@ -214,7 +204,7 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 	return handle, identity, nil
 }
 
-func openWindowsRegularAt(root platformRoot, parent windows.Handle, parentDepth int, finalName string) (platformFile, Identity, string, error) {
+func openWindowsRegularAt(root platformRoot, parent windows.Handle, finalName string) (platformFile, Identity, string, error) {
 	handleValue, err := openWindowsRelative(parent, finalName, false)
 	if err != nil {
 		return platformFile{}, Identity{}, "", err
@@ -229,7 +219,7 @@ func openWindowsRegularAt(root platformRoot, parent windows.Handle, parentDepth 
 		_ = closePlatformFile(&handle)
 		return platformFile{}, Identity{}, "", ErrSourceChanged
 	}
-	if err := verifyWindowsAncestry(parent, parentDepth, root); err != nil {
+	if err := verifyWindowsPathContained(handleValue, root); err != nil {
 		_ = closePlatformFile(&handle)
 		return platformFile{}, Identity{}, "", err
 	}
@@ -244,18 +234,9 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrInvalidTarget
 	}
 	if path.String() == "." {
-		handleValue, err := openWindowsRelative(root.handle, ".", true)
+		handleValue, identity, err := reopenWindowsDirectory(root)
 		if err != nil {
 			return 0, platformDir{}, platformFile{}, Identity{}, err
-		}
-		identity, err := verifyWindowsHandleIdentity(handleValue, root.volume, true)
-		if err != nil {
-			_ = windows.CloseHandle(handleValue)
-			return 0, platformDir{}, platformFile{}, Identity{}, err
-		}
-		if identity != root.identity {
-			_ = windows.CloseHandle(handleValue)
-			return 0, platformDir{}, platformFile{}, Identity{}, ErrSourceChanged
 		}
 		return SearchTargetDirectory, platformDir{handle: handleValue, valid: true, resolved: path}, platformFile{}, identity, nil
 	}
@@ -278,13 +259,7 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		_ = windows.CloseHandle(handleValue)
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrSourceChanged
 	}
-	ancestryHandle := parent
-	ancestryDepth := len(components) - 1
-	if kind == SearchTargetDirectory {
-		ancestryHandle = handleValue
-		ancestryDepth = len(components)
-	}
-	if err := verifyWindowsAncestry(ancestryHandle, ancestryDepth, root); err != nil {
+	if err := verifyWindowsPathContained(handleValue, root); err != nil {
 		_ = windows.CloseHandle(handleValue)
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
@@ -298,40 +273,6 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return kind, platformDir{handle: handleValue, valid: true, resolved: resolved}, platformFile{}, identity, nil
 	}
 	return kind, platformDir{}, platformFile{handle: handleValue, valid: true, resolved: resolved}, identity, nil
-}
-
-func verifyWindowsAncestry(directory windows.Handle, depth int, root platformRoot) error {
-	current := directory
-	owned := false
-	defer func() {
-		if owned {
-			_ = windows.CloseHandle(current)
-		}
-	}()
-
-	for step := 0; step < depth; step++ {
-		parent, err := openWindowsRelative(current, "..", true)
-		if err != nil {
-			return err
-		}
-		if owned {
-			_ = windows.CloseHandle(current)
-		}
-		current = parent
-		owned = true
-		if _, err := verifyWindowsHandleIdentity(current, root.volume, true); err != nil {
-			return err
-		}
-	}
-
-	identity, err := verifyWindowsHandleIdentity(current, root.volume, true)
-	if err != nil {
-		return err
-	}
-	if identity != root.identity {
-		return ErrSourceChanged
-	}
-	return nil
 }
 
 func openWindowsParent(root platformRoot, components []string) (windows.Handle, []string, error) {
@@ -437,6 +378,51 @@ func openWindowsSearchRelative(parent windows.Handle, component string) (windows
 		return windows.InvalidHandle, classifyWindowsOpenError(err, false)
 	}
 	return handle, nil
+}
+
+func reopenWindowsDirectory(root platformRoot) (windows.Handle, Identity, error) {
+	canonical, err := windowsFinalPath(root.handle)
+	if err != nil {
+		return windows.InvalidHandle, Identity{}, ErrSourceChanged
+	}
+	directory, code := pathspec.ParseRootDirectory(pathspec.Windows, canonical)
+	if code != "" {
+		return windows.InvalidHandle, Identity{}, ErrSourceChanged
+	}
+	reopened, _, identity, err := openPlatformRoot(directory)
+	if err != nil {
+		return windows.InvalidHandle, Identity{}, err
+	}
+	if identity != root.identity {
+		_ = closePlatformRoot(&reopened)
+		return windows.InvalidHandle, Identity{}, ErrSourceChanged
+	}
+	handle := reopened.handle
+	reopened.handle = windows.InvalidHandle
+	reopened.valid = false
+	return handle, identity, nil
+}
+
+func verifyWindowsPathContained(handle windows.Handle, root platformRoot) error {
+	rootPath, err := windowsFinalPath(root.handle)
+	if err != nil {
+		return ErrSourceChanged
+	}
+	openedPath, err := windowsFinalPath(handle)
+	if err != nil {
+		return ErrSourceChanged
+	}
+	if strings.EqualFold(openedPath, rootPath) {
+		return nil
+	}
+	prefix := rootPath
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	if len(openedPath) < len(prefix) || !strings.EqualFold(openedPath[:len(prefix)], prefix) {
+		return ErrSourceChanged
+	}
+	return nil
 }
 
 func verifyWindowsHandle(handle windows.Handle, rootVolume [16]byte, directory bool) (Identity, string, error) {

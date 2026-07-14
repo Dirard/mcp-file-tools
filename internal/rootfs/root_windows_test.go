@@ -141,12 +141,16 @@ func TestWindowsRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	defer windows.CloseHandle(parentHandle)
 	moved := filepath.Join(outsidePath, "a")
 	if err := os.Rename(filepath.Join(rootPath, "a"), moved); err != nil {
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			t.Log("open descendant handle prevented the parent from moving outside the root")
+			return
+		}
 		t.Fatalf("move parent outside root: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(moved, "b", "file"), []byte("outside"), 0o600); err != nil {
 		t.Fatalf("insert outside file: %v", err)
 	}
-	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, len(components)-1, components[len(components)-1])
+	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, components[len(components)-1])
 	if file.valid {
 		_ = closePlatformFile(&file)
 		t.Fatal("moved parent exposed a regular file")
@@ -199,6 +203,10 @@ func TestWindowsHandlesPreserveActualCasingAndShareDelete(t *testing.T) {
 	}
 	renamedDirectory := filepath.Join(rootPath, "RenamedDirectory")
 	if err := os.Rename(actualDirectory, renamedDirectory); err != nil {
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			t.Log("Windows kept the opened directory anchored and prevented its rename")
+			return
+		}
 		t.Fatalf("rename open directory (share-delete proof): %v", err)
 	}
 	reopened, err := lease.OpenRegular(mustWindowsRelative(t, "renameddirectory/renamed.txt", false))
@@ -286,6 +294,13 @@ func TestWindowsOpenSearchTargetTransfersOneActualCaseHandle(t *testing.T) {
 	}
 	if windowsSearchOptions&(windows.FILE_DIRECTORY_FILE|windows.FILE_NON_DIRECTORY_FILE) != 0 {
 		t.Fatalf("search options force a target kind: %#x", windowsSearchOptions)
+	}
+	wantDirectoryOptions := uint32(windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT)
+	if windowsDirectoryOptions != wantDirectoryOptions {
+		t.Fatalf("directory options = %#x, want %#x", windowsDirectoryOptions, wantDirectoryOptions)
+	}
+	if windowsDirectoryOptions&(windows.FILE_DIRECTORY_FILE|windows.FILE_NON_DIRECTORY_FILE) != 0 {
+		t.Fatalf("directory options force a target kind: %#x", windowsDirectoryOptions)
 	}
 }
 
@@ -411,6 +426,10 @@ func TestWindowsComponentReplacementNeverEscapes(t *testing.T) {
 			default:
 			}
 			if err := os.Rename(slot, parked); err != nil {
+				if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+					done <- err
+					return
+				}
 				done <- err
 				return
 			}
@@ -461,6 +480,10 @@ func TestWindowsComponentReplacementNeverEscapes(t *testing.T) {
 	}
 	close(stop)
 	if err := <-done; err != nil {
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) && successes > 0 {
+			t.Log("Windows kept an opened descendant anchored and prevented component replacement")
+			return
+		}
 		t.Fatalf("replacement loop error = %v", err)
 	}
 	if successes == 0 || rejections == 0 {

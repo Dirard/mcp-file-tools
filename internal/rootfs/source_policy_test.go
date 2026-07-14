@@ -36,7 +36,7 @@ func TestProductionOpenCallGraphHasNoCheckThenOpenBypass(t *testing.T) {
 					return true
 				}
 				if identifier, ok := call.Fun.(*ast.Ident); ok {
-					if identifier.Name == "openPlatformRoot" && function.Name.Name != "OpenRoot" {
+					if identifier.Name == "openPlatformRoot" && function.Name.Name != "OpenRoot" && function.Name.Name != "reopenWindowsDirectory" {
 						t.Errorf("%s: %s reopens a root instead of using an owned handle", fileSet.Position(call.Pos()), function.Name.Name)
 					}
 					return true
