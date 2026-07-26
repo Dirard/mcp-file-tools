@@ -149,7 +149,7 @@ Top-level fields:
 | cwd_id | yes | - | positive registered id |
 | files | yes | - | 1..24 file objects |
 | view | no | source | source or outline |
-| max_bytes | no | 32768 | 4096..32768 output bytes |
+| max_bytes | no | 1048576 | 4096..1048576 output bytes |
 
 Source file objects contain path, optional start defaulting to 1, and required
 end. start and end are inclusive positive line numbers.

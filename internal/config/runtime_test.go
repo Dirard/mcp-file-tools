@@ -44,6 +44,7 @@ func TestCompileTimeLimits(t *testing.T) {
 		want uint64
 	}{
 		{name: "output bytes", got: OutputMaxBytes, want: 32_768},
+		{name: "read output bytes", got: ReadOutputMaxBytes, want: 1_048_576},
 		{name: "primary code mode output tokens", got: PrimaryCodeModeMaxOutputTokens, want: 10_000},
 		{name: "stdio frame bytes", got: StdioFrameMaxBytes, want: 1_048_576},
 		{name: "request ID raw bytes", got: RequestIDMaxRawBytes, want: 256},

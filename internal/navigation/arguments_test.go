@@ -122,11 +122,12 @@ func TestDecodeReadArguments(t *testing.T) {
 		wantCursor bool
 		wantOK     bool
 	}{
-		{name: "source defaults", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":7}]}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 1, wantStart: 1, wantEnd: 7, wantBytes: 32768, wantOK: true},
+		{name: "source defaults", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":7}]}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 1, wantStart: 1, wantEnd: 7, wantBytes: 1048576, wantOK: true},
 		{name: "source bounds and duplicates", raw: `{"cwd_id":11e0,"files":[{"path":"main.go","start":2.0,"end":2147483647},{"path":"main.go","end":3}],"view":"source","max_bytes":4096}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 2, wantStart: 2, wantEnd: 2147483647, wantBytes: 4096, wantOK: true},
-		{name: "outline", raw: `{"cwd_id":11,"files":[{"path":"main.go"}],"view":"outline"}`, wantKind: initialArguments, wantView: navmodel.ReadOutline, wantFiles: 1, wantBytes: 32768, wantOK: true},
+		{name: "max bytes upper bound", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":1}],"max_bytes":1048576}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 1, wantStart: 1, wantEnd: 1, wantBytes: 1048576, wantOK: true},
+		{name: "outline", raw: `{"cwd_id":11,"files":[{"path":"main.go"}],"view":"outline"}`, wantKind: initialArguments, wantView: navmodel.ReadOutline, wantFiles: 1, wantBytes: 1048576, wantOK: true},
 		{name: "continuation", raw: `{"cwd_id":11,"cursor":"AAAAAAAAAAAAAAAAAAAAAA"}`, wantKind: continuationArguments, wantCursor: true, wantOK: true},
-		{name: "twenty four files", raw: `{"cwd_id":11,"files":[` + strings.TrimSuffix(strings.Repeat(`{"path":"main.go","end":1},`, 24), ",") + `]}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 24, wantStart: 1, wantEnd: 1, wantBytes: 32768, wantOK: true},
+		{name: "twenty four files", raw: `{"cwd_id":11,"files":[` + strings.TrimSuffix(strings.Repeat(`{"path":"main.go","end":1},`, 24), ",") + `]}`, wantKind: initialArguments, wantView: navmodel.ReadSource, wantFiles: 24, wantStart: 1, wantEnd: 1, wantBytes: 1048576, wantOK: true},
 		{name: "empty files", raw: `{"cwd_id":11,"files":[]}`},
 		{name: "twenty five files", raw: `{"cwd_id":11,"files":[` + strings.TrimSuffix(strings.Repeat(`{"path":"main.go","end":1},`, 25), ",") + `]}`},
 		{name: "missing source end", raw: `{"cwd_id":11,"files":[{"path":"main.go"}]}`},
@@ -137,7 +138,7 @@ func TestDecodeReadArguments(t *testing.T) {
 		{name: "null item field", raw: `{"cwd_id":11,"files":[{"path":null,"end":1}]}`},
 		{name: "bad path after valid item", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":1},{"path":"../escape","end":1}]}`},
 		{name: "max bytes low", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":1}],"max_bytes":4095}`},
-		{name: "max bytes high", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":1}],"max_bytes":32769}`},
+		{name: "max bytes high", raw: `{"cwd_id":11,"files":[{"path":"main.go","end":1}],"max_bytes":1048577}`},
 		{name: "mixed continuation", raw: `{"cwd_id":11,"cursor":"AAAAAAAAAAAAAAAAAAAAAA","files":[{"path":"main.go","end":1}]}`},
 	}
 

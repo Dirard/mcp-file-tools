@@ -204,6 +204,18 @@ func TestReadSourceSnapshotContinuationIsFilesystemFree(t *testing.T) {
 	}
 }
 
+func TestReadReturnsMoreThanLegacyOutputLimit(t *testing.T) {
+	fixture := newNavigationFixture(t, map[string]string{
+		"large.txt": strings.Repeat(strings.Repeat("x", 1024)+"\n", 64),
+	})
+
+	execution := fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"large.txt","end":64}],"max_bytes":1048576}`, fixture.cwdID))
+	text := resultText(t, execution)
+	if execution.Kind != runtimepkg.ExecutionOrdinary || execution.Result.IsError() || len(text) <= 32768 {
+		t.Fatalf("read did not return one page above the legacy limit: kind=%d bytes=%d result=%q", execution.Kind, len(text), text)
+	}
+}
+
 func TestReadMixedAndAllErrorResult(t *testing.T) {
 	fixture := newNavigationFixture(t, map[string]string{"ok.txt": "first\r\nsecond\r\n"})
 

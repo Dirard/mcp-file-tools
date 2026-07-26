@@ -61,8 +61,8 @@ func PlanRead(snapshot navmodel.ReadSnapshot, effectiveBytes uint64, maxPages ui
 	if snapshot.Validate() != nil || effectiveBytes == 0 || maxPages == 0 {
 		return ReadPlan{}, api.ErrorInvalidInput
 	}
-	if effectiveBytes > config.OutputMaxBytes {
-		effectiveBytes = config.OutputMaxBytes
+	if effectiveBytes > config.ReadOutputMaxBytes {
+		effectiveBytes = config.ReadOutputMaxBytes
 	}
 	material, err := materializeReadSnapshot(snapshot)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/Dirard/mcp-file-tools/internal/api"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 	"github.com/Dirard/mcp-file-tools/internal/cursor"
 	"github.com/Dirard/mcp-file-tools/internal/jsonwire"
 	"github.com/Dirard/mcp-file-tools/internal/navmodel"
@@ -306,7 +307,7 @@ func decodeReadArguments(raw []byte, detail *inputErrorDetail) (readArguments, a
 	default:
 		return readArguments{}, api.ErrorInvalidInput
 	}
-	maxBytes, ok := decodeUintMember(object, "max_bytes", 4096, 32768, false)
+	maxBytes, ok := decodeUintMember(object, "max_bytes", 4096, config.ReadOutputMaxBytes, false)
 	if !ok {
 		if value, present := object.Value("max_bytes"); present && value.Kind() == jsonwire.Number {
 			decimal, err := jsonwire.ParseDecimal(value.Bytes())
@@ -314,15 +315,15 @@ func decodeReadArguments(raw []byte, detail *inputErrorDetail) (readArguments, a
 				switch {
 				case decimal.CompareUint64(4096) < 0:
 					detail.set("max_bytes", "minimum_is_4096")
-				case decimal.CompareUint64(32768) > 0:
-					detail.set("max_bytes", "maximum_is_32768")
+				case decimal.CompareUint64(config.ReadOutputMaxBytes) > 0:
+					detail.set("max_bytes", "maximum_is_1048576")
 				}
 			}
 		}
 		return readArguments{}, api.ErrorInvalidInput
 	}
 	if _, present := object.Member("max_bytes"); !present {
-		maxBytes = 32768
+		maxBytes = config.ReadOutputMaxBytes
 	}
 
 	filesValue, present := object.Value("files")

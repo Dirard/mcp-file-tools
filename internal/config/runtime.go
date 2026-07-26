@@ -10,6 +10,7 @@ import (
 
 const (
 	OutputMaxBytes                 uint64        = 32_768
+	ReadOutputMaxBytes             uint64        = 1_048_576
 	PrimaryCodeModeMaxOutputTokens uint64        = 10_000
 	StdioFrameMaxBytes             uint64        = 1_048_576
 	RequestIDMaxRawBytes           uint64        = 256

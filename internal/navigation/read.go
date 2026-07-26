@@ -8,6 +8,7 @@ import (
 
 	"github.com/Dirard/mcp-file-tools/internal/api"
 	"github.com/Dirard/mcp-file-tools/internal/codeparse"
+	"github.com/Dirard/mcp-file-tools/internal/config"
 	"github.com/Dirard/mcp-file-tools/internal/cursor"
 	"github.com/Dirard/mcp-file-tools/internal/navmodel"
 	"github.com/Dirard/mcp-file-tools/internal/present"
@@ -54,7 +55,7 @@ func (connection *Connection) Read(ctx context.Context, raw []byte, work *runtim
 }
 
 func (connection *Connection) startRead(ctx context.Context, initial ReadInitial, work *runtimepkg.WorkLease) runtimepkg.Execution {
-	if !initial.Mode.Valid() || len(initial.Files) == 0 || len(initial.Files) > 24 || initial.MaxBytes < 4096 || initial.MaxBytes > 32768 ||
+	if !initial.Mode.Valid() || len(initial.Files) == 0 || len(initial.Files) > 24 || initial.MaxBytes < 4096 || initial.MaxBytes > config.ReadOutputMaxBytes ||
 		(initial.Mode == navmodel.ReadOutline && connection.Service.Parser == nil) {
 		return errorExecution(work, api.ErrorInvalidInput)
 	}
