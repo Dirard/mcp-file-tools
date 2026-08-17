@@ -349,7 +349,15 @@ func decodeReadArguments(raw []byte, detail *inputErrorDetail) (readArguments, a
 			return readArguments{}, api.ErrorInvalidInput
 		}
 		item, scanErr := jsonwire.ScanObject(value.Bytes(), toolArgumentLimits, jsonwire.ToolArguments)
-		if scanErr != nil || !validReadFileShape(item, view) {
+		if scanErr != nil {
+			return readArguments{}, api.ErrorInvalidInput
+		}
+		if view == navmodel.ReadSource {
+			if _, present := item.Member("end"); !present {
+				detail.set("files[].end", "required_for_source_view")
+			}
+		}
+		if !validReadFileShape(item, view) {
 			return readArguments{}, api.ErrorInvalidInput
 		}
 		pathValue, valid := decodeStringMember(item, "path", true)

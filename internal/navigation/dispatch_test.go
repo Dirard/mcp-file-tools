@@ -40,7 +40,7 @@ func TestDispatcherRoutesExactlyFourTools(t *testing.T) {
 
 	ctx, work := fixture.work(t)
 	unknown := dispatcher.Call(ctx, api.NewCall(api.ToolName("read_file"), []byte(`{}`)), work)
-	if !unknown.Result.IsError() || resultText(t, unknown) != "ERROR\tinvalid_input\n" {
+	if !unknown.Result.IsError() || resultText(t, unknown) != "ERROR\tinvalid_input\tfield=arguments\treason=does_not_match_tool_contract\n" {
 		t.Fatalf("unknown route = %+v", unknown)
 	}
 }

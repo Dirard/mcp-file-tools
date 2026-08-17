@@ -1,0 +1,27 @@
+{
+  "name": "mcp-file-tools",
+  "version": "0.0.7",
+  "description": "Read-only, token-efficient project navigation for Codex.",
+  "author": {
+    "name": "Dirard",
+    "url": "https://github.com/Dirard"
+  },
+  "homepage": "https://github.com/Dirard/mcp-file-tools",
+  "repository": "https://github.com/Dirard/mcp-file-tools",
+  "license": "GPL-3.0",
+  "keywords": ["codex", "mcp", "filesystem", "navigation"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "MCP File Tools",
+    "shortDescription": "Fast read-only project navigation.",
+    "longDescription": "Navigate project trees, search files and symbols, and read exact source ranges or compact outlines through MCP.",
+    "developerName": "Dirard",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/Dirard/mcp-file-tools",
+    "defaultPrompt": [
+      "Map this project and find the code relevant to my task.",
+      "Search this project and read only the source ranges I need."
+    ]
+  }
+}

@@ -23,6 +23,9 @@ func Error(code api.ErrorCode) api.Result {
 	if !code.Valid() {
 		code = api.ErrorInvalidInput
 	}
+	if code == api.ErrorInvalidInput {
+		return InputError("arguments", "does_not_match_tool_contract")
+	}
 	return api.Navigation("ERROR\t"+string(code)+"\n", true)
 }
 

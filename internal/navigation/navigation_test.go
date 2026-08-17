@@ -261,7 +261,7 @@ func TestSetCWDRegistersOneStableRoot(t *testing.T) {
 	}
 
 	invalid := fixture.setCWD(t, fmt.Sprintf(`{"directory":%q,"extra":true}`, fixture.directory))
-	if !invalid.Result.IsError() || resultText(t, invalid) != "ERROR\tinvalid_input\n" {
+	if !invalid.Result.IsError() || resultText(t, invalid) != "ERROR\tinvalid_input\tfield=arguments\treason=does_not_match_tool_contract\n" {
 		t.Fatalf("invalid set_cwd = %+v", invalid)
 	}
 	missing := fixture.setCWD(t, fmt.Sprintf(`{"directory":%q}`, filepath.Join(fixture.directory, "missing")))
@@ -295,6 +295,13 @@ func TestInvalidInputExplainsKnownFields(t *testing.T) {
 				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go","end":1}],"max_bytes":2048}`, fixture.cwdID))
 			},
 			want: "ERROR\tinvalid_input\tfield=max_bytes\treason=minimum_is_4096\n",
+		},
+		{
+			name: "source read missing end",
+			run: func() runtimepkg.Execution {
+				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go"}]}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=files[].end\treason=required_for_source_view\n",
 		},
 	}
 	for _, test := range tests {

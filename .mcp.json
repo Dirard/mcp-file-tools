@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "file-tools": {
+      "command": "go",
+      "args": ["run", "./cmd/mcp-file-tools"],
+      "cwd": "."
+    }
+  }
+}
