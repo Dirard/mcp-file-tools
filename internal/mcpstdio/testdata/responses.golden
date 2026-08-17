@@ -5,9 +5,9 @@
 {"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"invalid params"}}
 {"jsonrpc":"2.0","id":5,"error":{"code":-32000,"message":"server busy"}}
 {"jsonrpc":"2.0","id":6,"error":{"code":-32000,"message":"session request limit exceeded"}}
-{"jsonrpc":"2.0","id":"init","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"mcp-file-tools","version":"dev"},"instructions":"Code mode: max_output_tokens=10000; emit content[0].text for navigation/errors, cwd_id for successful set_cwd; never stringify CallToolResult."}}
+{"jsonrpc":"2.0","id":"init","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"mcp-file-tools","version":"dev"},"instructions":"Code mode: max_output_tokens=10000; emit content[0].text; set_cwd also mirrors cwd_id in structuredContent; never stringify CallToolResult."}}
 {"jsonrpc":"2.0","id":8,"result":{}}
-{"jsonrpc":"2.0","id":9,"result":{"content":[],"structuredContent":{"cwd_id":7}}}
+{"jsonrpc":"2.0","id":9,"result":{"content":[{"type":"text","text":"cwd_id=7\n"}],"structuredContent":{"cwd_id":7}}}
 {"jsonrpc":"2.0","id":10,"result":{"content":[{"type":"text","text":"PROJECT\trows=1\nDATA\t<tag>&\"slash\\\t \n"}]}}
 {"jsonrpc":"2.0","id":11,"result":{"content":[{"type":"text","text":"ERROR\tinvalid_input\n"}],"isError":true}}
 {"jsonrpc":"2.0","id":12,"result":{"content":[{"type":"text","text":"SEARCH\tstatus=partial\tcursor=abc\nDATA\tone\n"}]}}

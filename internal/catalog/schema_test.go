@@ -71,14 +71,18 @@ func TestCodexFacingInitialSchemasArePlainObjects(t *testing.T) {
 	}
 }
 
-func TestInputSchemasAreClosedAndInputOnly(t *testing.T) {
-	if _, exists := reflect.TypeOf(Definition{}).FieldByName("OutputSchema"); exists {
-		t.Fatal("Definition exposes an output schema")
-	}
+func TestInputSchemasAreClosedAndOnlySetCWDHasOutputSchema(t *testing.T) {
 	for _, name := range api.OrderedToolNames() {
 		definition, _ := Lookup(name)
 		schema := mustDecodeJSON(t, string(definition.InputSchema))
 		walkSchemaContract(t, string(name), schema)
+		if name == api.ToolSetCWD {
+			if len(definition.OutputSchema) == 0 || !json.Valid(definition.OutputSchema) {
+				t.Fatal("set_cwd must expose a valid output schema")
+			}
+		} else if len(definition.OutputSchema) != 0 {
+			t.Fatalf("%s unexpectedly exposes an output schema", name)
+		}
 	}
 }
 

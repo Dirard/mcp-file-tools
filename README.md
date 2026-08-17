@@ -13,8 +13,7 @@ The server exposes four stdio tools:
 
 Navigation results are compact line-oriented text, not deeply nested JSON. The
 protocol envelope stays standard MCP, while the useful payload is always
-content[0].text. Successful set_cwd is the only exception: read cwd_id from
-structuredContent.
+content[0].text. Successful set_cwd also mirrors cwd_id in structuredContent.
 
 ## Why four tools
 

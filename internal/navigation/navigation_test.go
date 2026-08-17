@@ -143,7 +143,7 @@ func TestSymbolSearchAndExplicitUnsupportedLanguage(t *testing.T) {
 	}
 
 	unsupported := fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"Serve","mode":"symbol","path":"notes.txt","glob":"*.go"}`, fixture.cwdID))
-	if !unsupported.Result.IsError() || resultText(t, unsupported) != "ERROR\tunsupported_language\n" {
+	if !unsupported.Result.IsError() || resultText(t, unsupported) != "ERROR\tunsupported_language\tmessage=outline_language_is_not_supported\thint=use_source_view_instead\n" {
 		t.Fatalf("unsupported language = %+v, %q", unsupported, resultText(t, unsupported))
 	}
 }
@@ -161,7 +161,7 @@ func TestTextSearchBroadWarningsAndExplicitBinaryError(t *testing.T) {
 	}
 
 	explicit := fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"needle","mode":"text","path":"binary.txt"}`, fixture.cwdID))
-	if !explicit.Result.IsError() || resultText(t, explicit) != "ERROR\tbinary\n" {
+	if !explicit.Result.IsError() || resultText(t, explicit) != "ERROR\tbinary\tmessage=file_is_binary\thint=choose_a_text_file_or_use_another_tool\n" {
 		t.Fatalf("explicit binary result:\n%s", resultText(t, explicit))
 	}
 }
@@ -261,11 +261,11 @@ func TestSetCWDRegistersOneStableRoot(t *testing.T) {
 	}
 
 	invalid := fixture.setCWD(t, fmt.Sprintf(`{"directory":%q,"extra":true}`, fixture.directory))
-	if !invalid.Result.IsError() || resultText(t, invalid) != "ERROR\tinvalid_input\tfield=arguments\treason=does_not_match_tool_contract\n" {
+	if !invalid.Result.IsError() || resultText(t, invalid) != "ERROR\tinvalid_input\tfield=arguments\treason=does_not_match_tool_contract\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n" {
 		t.Fatalf("invalid set_cwd = %+v", invalid)
 	}
 	missing := fixture.setCWD(t, fmt.Sprintf(`{"directory":%q}`, filepath.Join(fixture.directory, "missing")))
-	if !missing.Result.IsError() || resultText(t, missing) != "ERROR\tnot_found\n" {
+	if !missing.Result.IsError() || resultText(t, missing) != "ERROR\tnot_found\tmessage=path_was_not_found\thint=check_the_relative_path_and_registered_cwd\n" {
 		t.Fatalf("missing set_cwd = %+v", missing)
 	}
 }
@@ -278,30 +278,87 @@ func TestInvalidInputExplainsKnownFields(t *testing.T) {
 		want string
 	}{
 		{
+			name: "project missing cwd_id",
+			run:  func() runtimepkg.Execution { return fixture.project(t, `{}`) },
+			want: "ERROR\tinvalid_input\tfield=cwd_id\treason=required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "search missing cwd_id",
+			run:  func() runtimepkg.Execution { return fixture.search(t, `{}`) },
+			want: "ERROR\tinvalid_input\tfield=cwd_id\treason=required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "search missing query",
+			run: func() runtimepkg.Execution {
+				return fixture.search(t, fmt.Sprintf(`{"cwd_id":%d}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=query\treason=required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "search invalid mode",
+			run: func() runtimepkg.Execution {
+				return fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"main","mode":"unknown"}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=mode\treason=must_be_file_text_or_symbol\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "read missing cwd_id",
+			run:  func() runtimepkg.Execution { return fixture.read(t, `{}`) },
+			want: "ERROR\tinvalid_input\tfield=cwd_id\treason=required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "read missing files",
+			run: func() runtimepkg.Execution {
+				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=files\treason=required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
 			name: "relative directory",
 			run:  func() runtimepkg.Execution { return fixture.setCWD(t, `{"directory":"relative"}`) },
-			want: "ERROR\tinvalid_input\tfield=directory\treason=absolute_path_required\n",
+			want: "ERROR\tinvalid_input\tfield=directory\treason=absolute_path_required\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
 		},
 		{
 			name: "invalid regex",
 			run: func() runtimepkg.Execution {
 				return fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"(","regex":true}`, fixture.cwdID))
 			},
-			want: "ERROR\tinvalid_input\tfield=query\treason=invalid_re2_expression\n",
+			want: "ERROR\tinvalid_input\tfield=query\treason=invalid_re2_expression\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
 		},
 		{
 			name: "max bytes below minimum",
 			run: func() runtimepkg.Execution {
 				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go","end":1}],"max_bytes":2048}`, fixture.cwdID))
 			},
-			want: "ERROR\tinvalid_input\tfield=max_bytes\treason=minimum_is_4096\n",
+			want: "ERROR\tinvalid_input\tfield=max_bytes\treason=minimum_is_4096\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
 		},
 		{
 			name: "source read missing end",
 			run: func() runtimepkg.Execution {
 				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go"}]}`, fixture.cwdID))
 			},
-			want: "ERROR\tinvalid_input\tfield=files[].end\treason=required_for_source_view\n",
+			want: "ERROR\tinvalid_input\tfield=files[].end\treason=required_for_source_view\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "project depth above maximum",
+			run: func() runtimepkg.Execution {
+				return fixture.project(t, fmt.Sprintf(`{"cwd_id":%d,"depth":9}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=depth\treason=must_be_integer_0_to_8\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "outline read with source fields",
+			run: func() runtimepkg.Execution {
+				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"view":"outline","files":[{"path":"main.go","end":1}]}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=files[]\treason=outline_items_allow_only_path\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
+		},
+		{
+			name: "source read start after end",
+			run: func() runtimepkg.Execution {
+				return fixture.read(t, fmt.Sprintf(`{"cwd_id":%d,"files":[{"path":"main.go","start":2,"end":1}]}`, fixture.cwdID))
+			},
+			want: "ERROR\tinvalid_input\tfield=files[].start\treason=must_not_exceed_end\tmessage=tool_arguments_are_invalid\thint=fix_the_named_field_and_retry\n",
 		},
 	}
 	for _, test := range tests {

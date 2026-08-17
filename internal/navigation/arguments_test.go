@@ -35,7 +35,7 @@ func TestDecodeProjectArguments(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			arguments, code := decodeProjectArguments([]byte(test.raw))
+			arguments, code := decodeProjectArguments([]byte(test.raw), nil)
 			if (code == "") != test.wantOK {
 				t.Fatalf("code = %q", code)
 			}

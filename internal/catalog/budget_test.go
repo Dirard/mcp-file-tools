@@ -23,10 +23,11 @@ type budgetAnnotations struct {
 }
 
 type budgetTool struct {
-	Name        api.ToolName      `json:"name"`
-	Description string            `json:"description"`
-	InputSchema json.RawMessage   `json:"inputSchema"`
-	Annotations budgetAnnotations `json:"annotations"`
+	Name         api.ToolName      `json:"name"`
+	Description  string            `json:"description"`
+	InputSchema  json.RawMessage   `json:"inputSchema"`
+	OutputSchema json.RawMessage   `json:"outputSchema,omitempty"`
+	Annotations  budgetAnnotations `json:"annotations"`
 }
 
 func TestCatalogBudgets(t *testing.T) {
@@ -35,8 +36,8 @@ func TestCatalogBudgets(t *testing.T) {
 	if len(raw) > rawCatalogMaxBytes {
 		t.Fatalf("raw tools/list = %d bytes, limit %d", len(raw), rawCatalogMaxBytes)
 	}
-	if bytes.Contains(raw, []byte(`"outputSchema"`)) {
-		t.Fatal("raw tools/list unexpectedly contains outputSchema")
+	if bytes.Count(raw, []byte(`"outputSchema"`)) != 1 {
+		t.Fatal("raw tools/list must contain exactly one outputSchema")
 	}
 
 	codexFacing := codexFacingDefinitions(t, tools)
@@ -56,10 +57,14 @@ func budgetTools(t *testing.T) []budgetTool {
 		if !json.Valid(definition.InputSchema) {
 			t.Fatalf("Ordered()[%d].InputSchema is invalid JSON", i)
 		}
+		if len(definition.OutputSchema) != 0 && !json.Valid(definition.OutputSchema) {
+			t.Fatalf("Ordered()[%d].OutputSchema is invalid JSON", i)
+		}
 		tools[i] = budgetTool{
-			Name:        definition.Name,
-			Description: definition.Description,
-			InputSchema: append(json.RawMessage(nil), definition.InputSchema...),
+			Name:         definition.Name,
+			Description:  definition.Description,
+			InputSchema:  append(json.RawMessage(nil), definition.InputSchema...),
+			OutputSchema: append(json.RawMessage(nil), definition.OutputSchema...),
 			Annotations: budgetAnnotations{
 				Title:           definition.Title,
 				ReadOnlyHint:    definition.ReadOnly,

@@ -43,8 +43,12 @@ func TestOrderedCatalog(t *testing.T) {
 		if len(got[i].InputSchema) == 0 {
 			t.Errorf("Ordered()[%d].InputSchema is empty", i)
 		}
+		if (i == 0) != (len(got[i].OutputSchema) != 0) {
+			t.Errorf("Ordered()[%d].OutputSchema presence is wrong", i)
+		}
 		gotWithoutSchema := got[i]
 		gotWithoutSchema.InputSchema = nil
+		gotWithoutSchema.OutputSchema = nil
 		if !reflect.DeepEqual(gotWithoutSchema, want[i]) {
 			t.Errorf("Ordered()[%d] = %#v, want %#v", i, gotWithoutSchema, want[i])
 		}
@@ -55,6 +59,7 @@ func TestOrderedCatalog(t *testing.T) {
 			continue
 		}
 		lookup.InputSchema = nil
+		lookup.OutputSchema = nil
 		if !reflect.DeepEqual(lookup, want[i]) {
 			t.Errorf("Lookup(%q) = %#v, want %#v", want[i].Name, lookup, want[i])
 		}
@@ -66,12 +71,12 @@ func TestOrderedCatalog(t *testing.T) {
 }
 
 func TestInstructions(t *testing.T) {
-	const want = "Code mode: max_output_tokens=10000; emit content[0].text for navigation/errors, cwd_id for successful set_cwd; never stringify CallToolResult."
+	const want = "Code mode: max_output_tokens=10000; emit content[0].text; set_cwd also mirrors cwd_id in structuredContent; never stringify CallToolResult."
 	if Instructions != want {
 		t.Fatalf("Instructions = %q, want %q", Instructions, want)
 	}
-	if len(Instructions) != 142 {
-		t.Fatalf("Instructions length = %d, want 142 ASCII bytes", len(Instructions))
+	if len(Instructions) != len(want) {
+		t.Fatalf("Instructions length = %d, want %d ASCII bytes", len(Instructions), len(want))
 	}
 }
 
@@ -92,6 +97,9 @@ func TestCatalogDefinitionIsolation(t *testing.T) {
 		mutated[i].OpenWorld = !mutated[i].OpenWorld
 		for j := range mutated[i].InputSchema {
 			mutated[i].InputSchema[j] ^= 0xff
+		}
+		for j := range mutated[i].OutputSchema {
+			mutated[i].OutputSchema[j] ^= 0xff
 		}
 	}
 
@@ -119,6 +127,9 @@ func TestCatalogDefinitionIsolation(t *testing.T) {
 		}
 		for i := range first.InputSchema {
 			first.InputSchema[i] ^= 0xff
+		}
+		for i := range first.OutputSchema {
+			first.OutputSchema[i] ^= 0xff
 		}
 		first.Title = "mutated"
 

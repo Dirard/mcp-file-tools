@@ -16,10 +16,11 @@ type toolsListAnnotationsJSON struct {
 }
 
 type toolsListToolJSON struct {
-	Name        api.ToolName             `json:"name"`
-	Description string                   `json:"description"`
-	InputSchema json.RawMessage          `json:"inputSchema"`
-	Annotations toolsListAnnotationsJSON `json:"annotations"`
+	Name         api.ToolName             `json:"name"`
+	Description  string                   `json:"description"`
+	InputSchema  json.RawMessage          `json:"inputSchema"`
+	OutputSchema json.RawMessage          `json:"outputSchema,omitempty"`
+	Annotations  toolsListAnnotationsJSON `json:"annotations"`
 }
 
 type toolsListResultJSONDocument struct {
@@ -37,9 +38,10 @@ func buildToolsListResult(definitions []catalog.Definition) toolsListResultCache
 	tools := make([]toolsListToolJSON, len(definitions))
 	for index, definition := range definitions {
 		tools[index] = toolsListToolJSON{
-			Name:        definition.Name,
-			Description: definition.Description,
-			InputSchema: append(json.RawMessage(nil), definition.InputSchema...),
+			Name:         definition.Name,
+			Description:  definition.Description,
+			InputSchema:  append(json.RawMessage(nil), definition.InputSchema...),
+			OutputSchema: append(json.RawMessage(nil), definition.OutputSchema...),
 			Annotations: toolsListAnnotationsJSON{
 				Title:           definition.Title,
 				ReadOnlyHint:    definition.ReadOnly,

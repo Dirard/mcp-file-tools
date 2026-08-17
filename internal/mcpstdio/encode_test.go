@@ -90,7 +90,7 @@ func TestToolsListLifecycleResponseReusesCatalogGolden(t *testing.T) {
 	}
 }
 
-func TestToolResultHasOneExactPayloadChannel(t *testing.T) {
+func TestToolResultPayloadChannels(t *testing.T) {
 	navigation, err := encodeToolResult(mustResponseID(t, `1`), api.Navigation("DATA\tvalue\n", false))
 	if err != nil {
 		t.Fatal(err)
@@ -113,12 +113,12 @@ func TestToolResultHasOneExactPayloadChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantCWD := []byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[],"structuredContent":{"cwd_id":3}}}` + "\n")
+	wantCWD := []byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"cwd_id=3\n"}],"structuredContent":{"cwd_id":3}}}` + "\n")
 	if !bytes.Equal(cwd, wantCWD) {
 		t.Fatalf("cwd response = %s, want %s", cwd, wantCWD)
 	}
-	if bytes.Contains(cwd, []byte(`"text"`)) || bytes.Contains(cwd, []byte(`"isError"`)) {
-		t.Fatalf("cwd response contains a second payload channel: %s", cwd)
+	if bytes.Contains(cwd, []byte(`"isError"`)) {
+		t.Fatalf("cwd response is marked as an error: %s", cwd)
 	}
 }
 

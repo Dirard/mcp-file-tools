@@ -115,7 +115,7 @@ func TestPlanReadOutlineEmptyAndErrors(t *testing.T) {
 	mixedText, _ := mixedPage.Result.Text()
 	if mixedPage.Result.IsError() || mixedPage.Items != 3 || mixedPage.Rows != 0 ||
 		!strings.Contains(mixedText, "@\t\"empty.txt\"\titem=0\tempty\tcomplete\n") ||
-		!strings.Contains(mixedText, "@\t\"<path-hidden>\"\titem=1\terror\tbudget_exceeded\n") ||
+		!strings.Contains(mixedText, "@\t\"<path-hidden>\"\titem=1\terror\tbudget_exceeded\tmessage=operation_exceeded_server_budget\thint=narrow_request_or_reduce_limit\n") ||
 		!strings.Contains(mixedText, "@\t\"later.txt\"\titem=2\tempty\tcomplete\n") {
 		t.Fatalf("unexpected mixed page: %q %+v", mixedText, mixedPage)
 	}

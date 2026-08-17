@@ -17,9 +17,10 @@ func (connection *Connection) Project(ctx context.Context, raw []byte, work *run
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	arguments, code := decodeProjectArguments(raw)
+	var detail inputErrorDetail
+	arguments, code := decodeProjectArguments(raw, &detail)
 	if code != "" {
-		return errorExecution(work, code)
+		return inputErrorExecution(work, code, detail)
 	}
 	if arguments.kind == continuationArguments {
 		return connection.continueDynamic(ctx, arguments.continuation, api.ToolProject, work)

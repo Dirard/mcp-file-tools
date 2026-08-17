@@ -132,7 +132,7 @@ func TestServerDispatchesValidatedToolCallsThroughConnectionExecutor(t *testing.
 		t.Fatalf("Serve() error = %v", err)
 	}
 
-	wantOutput := `{"jsonrpc":"2.0","id":"init","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"mcp-file-tools","version":"dev"},"instructions":"Code mode: max_output_tokens=10000; emit content[0].text for navigation/errors, cwd_id for successful set_cwd; never stringify CallToolResult."}}` + "\n" +
+	wantOutput := `{"jsonrpc":"2.0","id":"init","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"mcp-file-tools","version":"dev"},"instructions":"Code mode: max_output_tokens=10000; emit content[0].text; set_cwd also mirrors cwd_id in structuredContent; never stringify CallToolResult."}}` + "\n" +
 		`{"jsonrpc":"2.0","id":"outer-a","result":{"content":[{"type":"text","text":"DATA\tok\n"}]}}` + "\n" +
 		`{"jsonrpc":"2.0","id":1e3,"result":{"content":[{"type":"text","text":"DATA\tok\n"}]}}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"ERROR\tinvalid_input\n"}],"isError":true}}` + "\n" +

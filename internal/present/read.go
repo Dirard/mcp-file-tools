@@ -406,6 +406,11 @@ func appendReadSegment(buffer *outputBuffer, item readMaterialItem, segment read
 		appendItemField(buffer, item.index)
 		buffer.appendString("\terror\t")
 		buffer.appendString(string(item.code))
+		message, hint := errorGuidance(item.code)
+		buffer.appendString("\tmessage=")
+		buffer.appendString(message)
+		buffer.appendString("\thint=")
+		buffer.appendString(hint)
 		buffer.appendByte('\n')
 		appendItemWarnings(buffer, item.index, item.warnings)
 	default:

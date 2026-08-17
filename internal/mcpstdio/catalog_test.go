@@ -27,7 +27,6 @@ func TestToolsListCatalogMatchesExactRawWireGolden(t *testing.T) {
 		t.Fatalf("tools/list raw wire = %d bytes, limit 12000", len(got))
 	}
 	for _, forbidden := range [][]byte{
-		[]byte(`"outputSchema"`),
 		[]byte(`"nextCursor"`),
 		[]byte(`"execution"`),
 		[]byte(`"icons"`),
@@ -45,10 +44,11 @@ func TestToolsListCatalogUsesExactOrderAndAnnotations(t *testing.T) {
 	}
 	var decoded struct {
 		Tools []struct {
-			Name        api.ToolName    `json:"name"`
-			Description string          `json:"description"`
-			InputSchema json.RawMessage `json:"inputSchema"`
-			Annotations struct {
+			Name         api.ToolName    `json:"name"`
+			Description  string          `json:"description"`
+			InputSchema  json.RawMessage `json:"inputSchema"`
+			OutputSchema json.RawMessage `json:"outputSchema"`
+			Annotations  struct {
 				Title           string `json:"title"`
 				ReadOnlyHint    bool   `json:"readOnlyHint"`
 				DestructiveHint bool   `json:"destructiveHint"`
@@ -66,7 +66,7 @@ func TestToolsListCatalogUsesExactOrderAndAnnotations(t *testing.T) {
 	}
 	for index, definition := range definitions {
 		tool := decoded.Tools[index]
-		if tool.Name != definition.Name || tool.Description != definition.Description || !bytes.Equal(tool.InputSchema, definition.InputSchema) {
+		if tool.Name != definition.Name || tool.Description != definition.Description || !bytes.Equal(tool.InputSchema, definition.InputSchema) || !bytes.Equal(tool.OutputSchema, definition.OutputSchema) {
 			t.Fatalf("tool %d catalog fields differ: %#v", index, tool)
 		}
 		if tool.Annotations.Title != definition.Title ||
@@ -79,6 +79,14 @@ func TestToolsListCatalogUsesExactOrderAndAnnotations(t *testing.T) {
 	}
 	if got := [4]api.ToolName{decoded.Tools[0].Name, decoded.Tools[1].Name, decoded.Tools[2].Name, decoded.Tools[3].Name}; got != api.OrderedToolNames() {
 		t.Fatalf("tool order = %v", got)
+	}
+	if len(decoded.Tools[0].OutputSchema) == 0 {
+		t.Fatal("set_cwd output schema is missing")
+	}
+	for index := 1; index < len(decoded.Tools); index++ {
+		if len(decoded.Tools[index].OutputSchema) != 0 {
+			t.Fatalf("tool %d unexpectedly has an output schema", index)
+		}
 	}
 }
 

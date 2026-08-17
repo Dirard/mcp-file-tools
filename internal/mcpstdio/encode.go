@@ -135,7 +135,9 @@ func encodeToolResultPayload(result api.Result) ([]byte, error) {
 		if !ok {
 			return nil, errors.New("mcpstdio: validated cwd result is inaccessible")
 		}
-		dst = append(dst, `{"content":[],"structuredContent":{"cwd_id":`...)
+		dst = append(dst, `{"content":[{"type":"text","text":"cwd_id=`...)
+		dst = strconv.AppendUint(dst, cwdID, 10)
+		dst = append(dst, `\n"}],"structuredContent":{"cwd_id":`...)
 		dst = strconv.AppendUint(dst, cwdID, 10)
 		dst = append(dst, '}', '}')
 		return dst, nil
