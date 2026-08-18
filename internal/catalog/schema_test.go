@@ -16,11 +16,11 @@ import (
 
 const expectedSetCWDInputSchema = `{"type":"object","properties":{"directory":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"pattern":"^(/|[A-Za-z]:[\\\\/]).*","description":"Absolute local directory; 1..4096 UTF-8 bytes."}},"required":["directory"],"additionalProperties":false}`
 
-const expectedProjectInputSchema = `{"oneOf":[{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"default":".","description":"Relative subtree root; 1..4096 UTF-8 bytes."},"depth":{"type":"integer","minimum":0,"maximum":8,"default":2,"description":"Maximum traversal depth."},"limit":{"type":"integer","minimum":1,"maximum":1000,"default":200,"description":"Maximum result rows."},"include_ignored":{"type":"boolean","default":false,"description":"Include ordinary ignored directories."}},"required":["cwd_id"],"additionalProperties":false},{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Opaque 22-character continuation token."}},"required":["cwd_id","cursor"],"additionalProperties":false}]}`
+const expectedProjectInputSchema = `{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Required registered cwd_id returned by set_cwd."},"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"default":".","description":"Relative subtree root; 1..4096 UTF-8 bytes."},"depth":{"type":"integer","minimum":0,"maximum":8,"default":2,"description":"Maximum traversal depth."},"limit":{"type":"integer","minimum":1,"maximum":1000,"default":200,"description":"Maximum result rows."},"include_ignored":{"type":"boolean","default":false,"description":"Include ordinary ignored directories."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Continuation token; when present, send only cwd_id and cursor."}},"required":["cwd_id"],"additionalProperties":false}`
 
-const expectedSearchInputSchema = `{"oneOf":[{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"query":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Search expression; 1..4096 UTF-8 bytes."},"mode":{"type":"string","enum":["file","text","symbol"],"default":"text","description":"Search family."},"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"default":".","description":"Relative search root; 1..4096 UTF-8 bytes."},"glob":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Optional file glob for text or symbol mode; 1..4096 UTF-8 bytes."},"regex":{"type":"boolean","default":false,"description":"Interpret text or symbol query as RE2; omit in file mode."},"ignore_case":{"type":"boolean","default":false,"description":"Use Unicode case-fold matching."},"context":{"type":"integer","minimum":0,"maximum":20,"default":0,"description":"Context lines for text mode; omit in file or symbol mode."},"include_ignored":{"type":"boolean","default":false,"description":"Include ordinary ignored directories."},"limit":{"type":"integer","minimum":1,"maximum":1000,"default":50,"description":"Maximum result rows."}},"required":["cwd_id","query"],"additionalProperties":false},{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Opaque 22-character continuation token."}},"required":["cwd_id","cursor"],"additionalProperties":false}]}`
+const expectedSearchInputSchema = `{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Required registered cwd_id returned by set_cwd."},"query":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Search expression required for an initial request; omit only with cursor."},"mode":{"type":"string","enum":["file","text","symbol"],"default":"text","description":"Search family."},"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"default":".","description":"Relative search root; 1..4096 UTF-8 bytes."},"glob":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Optional file glob for text or symbol mode; 1..4096 UTF-8 bytes."},"regex":{"type":"boolean","default":false,"description":"Interpret text or symbol query as RE2; omit in file mode."},"ignore_case":{"type":"boolean","default":false,"description":"Use Unicode case-fold matching."},"context":{"type":"integer","minimum":0,"maximum":20,"default":0,"description":"Context lines for text mode; omit in file or symbol mode."},"include_ignored":{"type":"boolean","default":false,"description":"Include ordinary ignored directories."},"limit":{"type":"integer","minimum":1,"maximum":1000,"default":50,"description":"Maximum result rows."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Continuation token; when present, send only cwd_id and cursor."}},"required":["cwd_id"],"additionalProperties":false}`
 
-const expectedReadInputSchema = `{"oneOf":[{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"files":{"type":"array","minItems":1,"maxItems":24,"description":"Files to read.","items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Relative file path; 1..4096 UTF-8 bytes."},"start":{"type":"integer","minimum":1,"maximum":2147483647,"default":1,"description":"First source line; source view only."},"end":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Last source line; required for source view and omitted for outline."}},"required":["path"],"additionalProperties":false}},"view":{"type":"string","enum":["source","outline"],"default":"source","description":"Output representation."},"max_bytes":{"type":"integer","minimum":4096,"maximum":1048576,"default":1048576,"description":"Maximum aggregate TextContent bytes."}},"required":["cwd_id","files"],"additionalProperties":false},{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Registered cwd_id."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Opaque 22-character continuation token."}},"required":["cwd_id","cursor"],"additionalProperties":false}]}`
+const expectedReadInputSchema = `{"type":"object","properties":{"cwd_id":{"type":"integer","minimum":1,"maximum":9007199254740991,"description":"Required registered cwd_id returned by set_cwd."},"files":{"type":"array","minItems":1,"maxItems":24,"description":"Files required for an initial read; omit only with cursor.","items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096,"x-utf8MaxBytes":4096,"description":"Relative file path; 1..4096 UTF-8 bytes."},"start":{"type":"integer","minimum":1,"maximum":2147483647,"default":1,"description":"First source line; source view only."},"end":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Last source line; required for source view and omitted for outline."}},"required":["path"],"additionalProperties":false}},"view":{"type":"string","enum":["source","outline"],"default":"source","description":"Output representation."},"max_bytes":{"type":"integer","minimum":4096,"maximum":1048576,"default":1048576,"description":"Maximum aggregate TextContent bytes."},"cursor":{"type":"string","minLength":22,"maxLength":22,"pattern":"^[A-Za-z0-9_-]{22}$","description":"Continuation token; when present, send only cwd_id and cursor."}},"required":["cwd_id"],"additionalProperties":false}`
 
 func TestInputSchemaSnapshots(t *testing.T) {
 	expected := map[api.ToolName]string{
@@ -54,19 +54,18 @@ func TestInputSchemaSnapshots(t *testing.T) {
 	}
 }
 
-func TestCodexFacingInitialSchemasArePlainObjects(t *testing.T) {
-	for _, name := range []api.ToolName{api.ToolSearch, api.ToolRead} {
+func TestCodexFacingSchemasArePlainObjects(t *testing.T) {
+	for _, name := range []api.ToolName{api.ToolProject, api.ToolSearch, api.ToolRead} {
 		definition, ok := Lookup(name)
 		if !ok {
 			t.Fatalf("Lookup(%q) not found", name)
 		}
 		root := mustDecodeJSON(t, string(definition.InputSchema)).(map[string]any)
-		variants := root["oneOf"].([]any)
-		initial := variants[0].(map[string]any)
-		for _, keyword := range []string{"allOf", "anyOf", "oneOf"} {
-			if _, exists := initial[keyword]; exists {
-				t.Errorf("%s initial schema contains %s; Codex hides that branch as unknown", name, keyword)
-			}
+		if root["type"] != "object" {
+			t.Errorf("%s root type = %v, want object", name, root["type"])
+		}
+		if _, exists := root["oneOf"]; exists {
+			t.Errorf("%s root contains oneOf; native subagents drop union arguments", name)
 		}
 	}
 }
@@ -114,7 +113,6 @@ func TestInputSchemaExamples(t *testing.T) {
 			`{"cwd_id":9007199254740992}`,
 			`{"cwd_id":1.5}`,
 			`{"cwd_id":1,"depth":9}`,
-			`{"cwd_id":1,"cursor":"` + cursor + `","path":"."}`,
 			`{"cwd_id":1,"cursor":"short"}`,
 			`{"cwd_id":1,"extra":true}`,
 		},
@@ -129,10 +127,8 @@ func TestInputSchemaExamples(t *testing.T) {
 			`{"cwd_id":1,"cursor":"` + cursor + `"}`,
 		},
 		[]string{
-			`{"cwd_id":1}`,
 			`{"cwd_id":1,"query":"needle","mode":"unknown"}`,
 			`{"cwd_id":1,"query":"needle","limit":1.5}`,
-			`{"cwd_id":1,"cursor":"` + cursor + `","query":"needle"}`,
 		},
 	)
 
@@ -149,7 +145,6 @@ func TestInputSchemaExamples(t *testing.T) {
 			`{"cwd_id":1,"files":[{"path":"main.go","end":1,"extra":true}],"view":"source"}`,
 			`{"cwd_id":1,"files":[{"path":"main.go","end":1}],"view":"unknown"}`,
 			`{"cwd_id":1,"files":[{"path":"main.go","end":1}],"max_bytes":4096.5}`,
-			`{"cwd_id":1,"cursor":"` + cursor + `","view":"source"}`,
 			readExample(25, `{"path":"main.go","end":1}`),
 		},
 	)
