@@ -47,6 +47,18 @@ type platformFile struct {
 	resolved pathspec.Relative
 }
 
+// windowsSymlinkProof records the source and target identities observed while
+// following one reparse-point symlink. The source parent handle keeps the
+// validation anchored to the same directory object used for the original
+// lookup, even if that directory is renamed concurrently.
+type windowsSymlinkProof struct {
+	parent          windows.Handle
+	name            string
+	source          Identity
+	target          Identity
+	targetDirectory bool
+}
+
 type windowsFileIDInfo struct {
 	VolumeSerialNumber uint64
 	FileID             [16]byte
@@ -147,22 +159,36 @@ func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Id
 		return platformDir{handle: handleValue, valid: true, resolved: path}, identity, nil
 	}
 	components := path.Components()
-	parent, actual, throughSymlink, err := openWindowsParent(root, components)
+	parent, actual, throughSymlink, proofs, err := openWindowsParent(root, components)
 	if err != nil {
 		return platformDir{}, Identity{}, err
 	}
 	defer windows.CloseHandle(parent)
-	finalSymlink, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
+	defer closeWindowsSymlinkProofs(proofs)
+	finalSymlink, finalProof, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
 	if symlinkErr != nil {
 		return platformDir{}, Identity{}, symlinkErr
 	}
 	throughSymlink = throughSymlink || finalSymlink
-	handleValue, err := openWindowsRelative(parent, components[len(components)-1], true, !throughSymlink)
+	finalProofIndex := -1
+	if finalSymlink {
+		finalProofIndex = len(proofs)
+		proofs = append(proofs, finalProof)
+	}
+	handleValue, err := openWindowsRelative(parent, components[len(components)-1], true, !finalSymlink)
 	if err != nil {
 		return platformDir{}, Identity{}, err
 	}
 	identity, actualName, err := verifyWindowsHandleAllow(handleValue, root.volume, true, throughSymlink)
 	if err != nil {
+		_ = windows.CloseHandle(handleValue)
+		return platformDir{}, Identity{}, err
+	}
+	if finalProofIndex >= 0 {
+		proofs[finalProofIndex].target = identity
+		proofs[finalProofIndex].targetDirectory = true
+	}
+	if err := verifyWindowsSymlinkProofs(proofs); err != nil {
 		_ = windows.CloseHandle(handleValue)
 		return platformDir{}, Identity{}, err
 	}
@@ -197,18 +223,32 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 		return platformFile{}, Identity{}, ErrNotRegular
 	}
 	components := path.Components()
-	parent, actual, throughSymlink, err := openWindowsParent(root, components)
+	parent, actual, throughSymlink, proofs, err := openWindowsParent(root, components)
 	if err != nil {
 		return platformFile{}, Identity{}, err
 	}
 	defer windows.CloseHandle(parent)
-	finalSymlink, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
+	defer closeWindowsSymlinkProofs(proofs)
+	finalSymlink, finalProof, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
 	if symlinkErr != nil {
 		return platformFile{}, Identity{}, symlinkErr
 	}
 	throughSymlink = throughSymlink || finalSymlink
-	handle, identity, actualName, err := openWindowsRegularAt(root, parent, components[len(components)-1], throughSymlink)
+	finalProofIndex := -1
+	if finalSymlink {
+		finalProofIndex = len(proofs)
+		proofs = append(proofs, finalProof)
+	}
+	handle, identity, actualName, err := openWindowsRegularAt(root, parent, components[len(components)-1], finalSymlink, throughSymlink)
 	if err != nil {
+		return platformFile{}, Identity{}, err
+	}
+	if finalProofIndex >= 0 {
+		proofs[finalProofIndex].target = identity
+		proofs[finalProofIndex].targetDirectory = false
+	}
+	if err := verifyWindowsSymlinkProofs(proofs); err != nil {
+		_ = closePlatformFile(&handle)
 		return platformFile{}, Identity{}, err
 	}
 	if throughSymlink {
@@ -225,8 +265,8 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 	return handle, identity, nil
 }
 
-func openWindowsRegularAt(root platformRoot, parent windows.Handle, finalName string, throughSymlink bool) (platformFile, Identity, string, error) {
-	handleValue, err := openWindowsRelative(parent, finalName, false, !throughSymlink)
+func openWindowsRegularAt(root platformRoot, parent windows.Handle, finalName string, followFinal, throughSymlink bool) (platformFile, Identity, string, error) {
+	handleValue, err := openWindowsRelative(parent, finalName, false, !followFinal)
 	if err != nil {
 		return platformFile{}, Identity{}, "", err
 	}
@@ -264,22 +304,36 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return SearchTargetDirectory, platformDir{handle: handleValue, valid: true, resolved: path}, platformFile{}, identity, nil
 	}
 	components := path.Components()
-	parent, actual, throughSymlink, err := openWindowsParent(root, components)
+	parent, actual, throughSymlink, proofs, err := openWindowsParent(root, components)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
 	defer windows.CloseHandle(parent)
-	finalSymlink, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
+	defer closeWindowsSymlinkProofs(proofs)
+	finalSymlink, finalProof, symlinkErr := windowsFinalIsSymlink(parent, components[len(components)-1])
 	if symlinkErr != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, symlinkErr
 	}
 	throughSymlink = throughSymlink || finalSymlink
-	handleValue, err := openWindowsSearchRelative(parent, components[len(components)-1], windowsSearchAccess, !throughSymlink)
+	finalProofIndex := -1
+	if finalSymlink {
+		finalProofIndex = len(proofs)
+		proofs = append(proofs, finalProof)
+	}
+	handleValue, err := openWindowsSearchRelative(parent, components[len(components)-1], windowsSearchAccess, !finalSymlink)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
 	kind, identity, actualName, err := verifyWindowsSearchHandleAllow(handleValue, root.volume, throughSymlink)
 	if err != nil {
+		_ = windows.CloseHandle(handleValue)
+		return 0, platformDir{}, platformFile{}, Identity{}, err
+	}
+	if finalProofIndex >= 0 {
+		proofs[finalProofIndex].target = identity
+		proofs[finalProofIndex].targetDirectory = kind == SearchTargetDirectory
+	}
+	if err := verifyWindowsSymlinkProofs(proofs); err != nil {
 		_ = windows.CloseHandle(handleValue)
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
@@ -310,51 +364,89 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 	return kind, platformDir{}, platformFile{handle: handleValue, valid: true, resolved: resolved}, identity, nil
 }
 
-func openWindowsParent(root platformRoot, components []string) (windows.Handle, []string, bool, error) {
+func openWindowsParent(root platformRoot, components []string) (windows.Handle, []string, bool, []windowsSymlinkProof, error) {
 	if len(components) == 0 {
-		return windows.InvalidHandle, nil, false, ErrIO
+		return windows.InvalidHandle, nil, false, nil, ErrIO
 	}
 	parent, err := duplicateWindowsHandle(root.handle)
 	if err != nil {
-		return windows.InvalidHandle, nil, false, classifyWindowsOpenError(err, true)
+		return windows.InvalidHandle, nil, false, nil, classifyWindowsOpenError(err, true)
 	}
+	proofs := make([]windowsSymlinkProof, 0, len(components)-1)
+	keepProofs := false
+	defer func() {
+		if !keepProofs {
+			closeWindowsSymlinkProofs(proofs)
+		}
+	}()
 	actual := make([]string, 0, len(components)-1)
 	throughSymlink := false
 	for _, component := range components[:len(components)-1] {
 		child, openErr := openWindowsRelative(parent, component, true, true)
 		if openErr != nil {
 			_ = windows.CloseHandle(parent)
-			return windows.InvalidHandle, nil, false, openErr
+			return windows.InvalidHandle, nil, false, nil, openErr
 		}
 		attributes, tag, attributeErr := windowsAttributeTag(child)
 		if attributeErr != nil {
 			_ = windows.CloseHandle(child)
 			_ = windows.CloseHandle(parent)
-			return windows.InvalidHandle, nil, false, ErrIO
+			return windows.InvalidHandle, nil, false, nil, ErrIO
 		}
+		proofIndex := -1
 		if windowsEntryKind(attributes, tag) == EntrySymlink {
-			_ = windows.CloseHandle(child)
-			child, openErr = openWindowsRelative(parent, component, true, false)
-			if openErr != nil {
+			source, identityErr := windowsIdentity(child)
+			if identityErr != nil {
+				_ = windows.CloseHandle(child)
 				_ = windows.CloseHandle(parent)
-				return windows.InvalidHandle, nil, false, openErr
+				return windows.InvalidHandle, nil, false, nil, ErrSourceChanged
+			}
+			proofParent, duplicateErr := duplicateWindowsHandle(parent)
+			if duplicateErr != nil {
+				_ = windows.CloseHandle(child)
+				_ = windows.CloseHandle(parent)
+				return windows.InvalidHandle, nil, false, nil, ErrIO
+			}
+			followed, followErr := openWindowsRelative(parent, component, true, false)
+			_ = windows.CloseHandle(child)
+			child = followed
+			openErr = followErr
+			if openErr != nil {
+				_ = windows.CloseHandle(proofParent)
+				_ = windows.CloseHandle(parent)
+				return windows.InvalidHandle, nil, false, nil, openErr
 			}
 			throughSymlink = true
+			proofIndex = len(proofs)
+			proofs = append(proofs, windowsSymlinkProof{
+				parent: proofParent,
+				name:   component,
+				source: source,
+			})
 		} else if windowsEntryKind(attributes, tag) == EntryBoundary {
 			_ = windows.CloseHandle(child)
 			_ = windows.CloseHandle(parent)
-			return windows.InvalidHandle, nil, false, ErrMountBoundary
+			return windows.InvalidHandle, nil, false, nil, ErrMountBoundary
 		}
-		_, actualName, verifyErr := verifyWindowsHandleAllow(child, root.volume, true, throughSymlink)
+		identity, actualName, verifyErr := verifyWindowsHandleAllow(child, root.volume, true, throughSymlink)
 		if verifyErr != nil {
 			_ = windows.CloseHandle(child)
 			_ = windows.CloseHandle(parent)
-			return windows.InvalidHandle, nil, false, verifyErr
+			return windows.InvalidHandle, nil, false, nil, verifyErr
+		}
+		if proofIndex >= 0 {
+			proofs[proofIndex].target = identity
+			proofs[proofIndex].targetDirectory = true
+			if err := verifyWindowsSymlinkProof(proofs[proofIndex]); err != nil {
+				_ = windows.CloseHandle(child)
+				_ = windows.CloseHandle(parent)
+				return windows.InvalidHandle, nil, false, nil, err
+			}
 		}
 		if !throughSymlink && !strings.EqualFold(actualName, component) {
 			_ = windows.CloseHandle(child)
 			_ = windows.CloseHandle(parent)
-			return windows.InvalidHandle, nil, false, ErrSourceChanged
+			return windows.InvalidHandle, nil, false, nil, ErrSourceChanged
 		}
 		if !throughSymlink {
 			actual = append(actual, actualName)
@@ -362,7 +454,8 @@ func openWindowsParent(root platformRoot, components []string) (windows.Handle, 
 		_ = windows.CloseHandle(parent)
 		parent = child
 	}
-	return parent, actual, throughSymlink, nil
+	keepProofs = true
+	return parent, actual, throughSymlink, proofs, nil
 }
 
 func openWindowsRelative(parent windows.Handle, component string, directory, openReparsePoint bool) (windows.Handle, error) {
@@ -446,26 +539,87 @@ func openWindowsSearchRelative(parent windows.Handle, component string, access u
 	return handle, nil
 }
 
-func windowsFinalIsSymlink(parent windows.Handle, name string) (bool, error) {
+func windowsFinalIsSymlink(parent windows.Handle, name string) (bool, windowsSymlinkProof, error) {
 	handle, err := openWindowsSearchRelative(parent, name, windowsMetadataAccess, true)
 	if err != nil {
-		return false, err
+		return false, windowsSymlinkProof{}, err
 	}
 	attributes, tag, err := windowsAttributeTag(handle)
-	closeErr := windows.CloseHandle(handle)
 	if err != nil {
-		return false, ErrIO
-	}
-	if closeErr != nil {
-		return false, ErrIO
+		_ = windows.CloseHandle(handle)
+		return false, windowsSymlinkProof{}, ErrIO
 	}
 	if attributes&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
-		return false, nil
+		if closeErr := windows.CloseHandle(handle); closeErr != nil {
+			return false, windowsSymlinkProof{}, ErrIO
+		}
+		return false, windowsSymlinkProof{}, nil
 	}
 	if tag == windows.IO_REPARSE_TAG_MOUNT_POINT {
-		return false, ErrMountBoundary
+		_ = windows.CloseHandle(handle)
+		return false, windowsSymlinkProof{}, ErrMountBoundary
 	}
-	return true, nil
+	source, identityErr := windowsIdentity(handle)
+	if identityErr != nil {
+		_ = windows.CloseHandle(handle)
+		return false, windowsSymlinkProof{}, ErrSourceChanged
+	}
+	proofParent, duplicateErr := duplicateWindowsHandle(parent)
+	if closeErr := windows.CloseHandle(handle); closeErr != nil {
+		if duplicateErr == nil {
+			_ = windows.CloseHandle(proofParent)
+		}
+		return false, windowsSymlinkProof{}, ErrIO
+	}
+	if duplicateErr != nil {
+		return false, windowsSymlinkProof{}, ErrIO
+	}
+	return true, windowsSymlinkProof{parent: proofParent, name: name, source: source}, nil
+}
+
+func closeWindowsSymlinkProofs(proofs []windowsSymlinkProof) {
+	for index := range proofs {
+		if proofs[index].parent == windows.InvalidHandle {
+			continue
+		}
+		_ = windows.CloseHandle(proofs[index].parent)
+		proofs[index].parent = windows.InvalidHandle
+	}
+}
+
+func verifyWindowsSymlinkProofs(proofs []windowsSymlinkProof) error {
+	for index := range proofs {
+		if err := verifyWindowsSymlinkProof(proofs[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func verifyWindowsSymlinkProof(proof windowsSymlinkProof) error {
+	sourceHandle, err := openWindowsSearchRelative(proof.parent, proof.name, windowsMetadataAccess, true)
+	if err != nil {
+		return ErrSourceChanged
+	}
+	attributes, tag, attributeErr := windowsAttributeTag(sourceHandle)
+	source, identityErr := windowsIdentity(sourceHandle)
+	closeErr := windows.CloseHandle(sourceHandle)
+	if attributeErr != nil || identityErr != nil || closeErr != nil {
+		return ErrSourceChanged
+	}
+	if windowsEntryKind(attributes, tag) != EntrySymlink || source != proof.source {
+		return ErrSourceChanged
+	}
+	targetHandle, err := openWindowsRelative(proof.parent, proof.name, proof.targetDirectory, false)
+	if err != nil {
+		return ErrSourceChanged
+	}
+	target, identityErr := windowsIdentity(targetHandle)
+	closeErr = windows.CloseHandle(targetHandle)
+	if identityErr != nil || closeErr != nil || target != proof.target {
+		return ErrSourceChanged
+	}
+	return nil
 }
 
 func reopenWindowsDirectory(root platformRoot) (windows.Handle, Identity, error) {

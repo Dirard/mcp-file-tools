@@ -134,11 +134,12 @@ func TestWindowsRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	defer lease.Close()
 	path := mustWindowsRelative(t, "a/b/file", false)
 	components := path.Components()
-	parentHandle, _, throughSymlink, err := openWindowsParent(lease.handle, components)
+	parentHandle, _, throughSymlink, proofs, err := openWindowsParent(lease.handle, components)
 	if err != nil {
 		t.Fatalf("open parent: %v", err)
 	}
 	defer windows.CloseHandle(parentHandle)
+	defer closeWindowsSymlinkProofs(proofs)
 	moved := filepath.Join(outsidePath, "a")
 	if err := os.Rename(filepath.Join(rootPath, "a"), moved); err != nil {
 		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
@@ -150,7 +151,7 @@ func TestWindowsRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(moved, "b", "file"), []byte("outside"), 0o600); err != nil {
 		t.Fatalf("insert outside file: %v", err)
 	}
-	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, components[len(components)-1], throughSymlink)
+	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, components[len(components)-1], false, throughSymlink)
 	if file.valid {
 		_ = closePlatformFile(&file)
 		t.Fatal("moved parent exposed a regular file")
