@@ -59,7 +59,7 @@ func enumeratePlatformDir(handle platformDir, parent pathspec.Relative, rootMoun
 			}
 			kindHint := entryKindFromLinuxDirentType(entry.Type)
 			outcome, err := posixEnumerationOutcomeWithEvidence(parent, name, kindHint, func(component string) (EntryKind, Identity, bool, error) {
-				return linuxEntryEvidence(handle.fd, component, rootMount)
+				return linuxEntryEvidence(handle.fd, component, rootMount, kindHint)
 			})
 			if err != nil {
 				return err
@@ -84,12 +84,12 @@ func entryKindFromLinuxDirentType(kind uint8) EntryKind {
 	}
 }
 
-func linuxEntryEvidence(directoryFD int, name string, rootMount [16]byte) (EntryKind, Identity, bool, error) {
+func linuxEntryEvidence(directoryFD int, name string, rootMount [16]byte, kindHint EntryKind) (EntryKind, Identity, bool, error) {
 	identity, mode, err := linuxIdentityAt(directoryFD, name)
 	if err != nil {
 		return 0, Identity{}, false, classifyLinuxEnumerationError(err)
 	}
-	if identity.Mount != rootMount {
+	if kindHint != EntrySymlink && identity.Mount != rootMount {
 		return EntryBoundary, identity, true, nil
 	}
 	return entryKindFromUnixMode(mode), identity, true, nil
@@ -98,7 +98,7 @@ func linuxEntryEvidence(directoryFD int, name string, rootMount [16]byte) (Entry
 func linuxIdentityAt(directoryFD int, name string) (Identity, uint32, error) {
 	var statx unix.Statx_t
 	wantMask := uint32(unix.STATX_TYPE | unix.STATX_INO | unix.STATX_MNT_ID)
-	err := unix.Statx(directoryFD, name, unix.AT_SYMLINK_NOFOLLOW|unix.AT_STATX_SYNC_AS_STAT, int(wantMask), &statx)
+	err := unix.Statx(directoryFD, name, unix.AT_STATX_SYNC_AS_STAT, int(wantMask), &statx)
 	if err == nil && statx.Mask&wantMask == wantMask {
 		identity := Identity{Platform: pathspec.POSIX}
 		binary.LittleEndian.PutUint64(identity.Mount[0:8], statx.Mnt_id)
@@ -108,7 +108,7 @@ func linuxIdentityAt(directoryFD int, name string) (Identity, uint32, error) {
 		return identity, uint32(statx.Mode) & unix.S_IFMT, nil
 	}
 	var stat unix.Stat_t
-	if fallbackErr := unix.Fstatat(directoryFD, name, &stat, unix.AT_SYMLINK_NOFOLLOW); fallbackErr != nil {
+	if fallbackErr := unix.Fstatat(directoryFD, name, &stat, 0); fallbackErr != nil {
 		if err != nil {
 			return Identity{}, 0, err
 		}

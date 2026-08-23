@@ -8,8 +8,8 @@ import (
 
 var (
 	_ [4]ToolName     = OrderedToolNames()
-	_ [16]ErrorCode   = OrderedErrorCodes()
-	_ [12]WarningCode = OrderedWarningCodes()
+	_ [15]ErrorCode   = OrderedErrorCodes()
+	_ [11]WarningCode = OrderedWarningCodes()
 	_ [19]Language    = OrderedLanguages()
 	_ [20]Kind        = OrderedKinds()
 )
@@ -32,7 +32,6 @@ func TestClosedVocabularies(t *testing.T) {
 		"binary",
 		"unsupported_encoding",
 		"unsupported_language",
-		"line_too_long",
 		"record_exceeds_budget",
 		"cursor_expired",
 		"cursor_wrong_tool",
@@ -54,7 +53,6 @@ func TestClosedVocabularies(t *testing.T) {
 		"symlink_skipped",
 		"mount_skipped",
 		"unaddressable_path_skipped",
-		"line_too_long_skipped",
 	}, WarningCode.Valid)
 	assertClosedVocabulary(t, "languages", languages[:], []string{
 		"markdown",

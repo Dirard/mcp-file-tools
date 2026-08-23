@@ -22,8 +22,6 @@ const (
 	WarningExamplesPerCode         uint64        = 1
 	WarningSummaryLineMaxBytes     uint64        = 128
 	WarningSummaryMaxBytes         uint64        = 1_536
-	SearchScanLineMaxBytes         uint64        = 4_096
-	SourceLineMaxBytes             uint64        = 4_096
 	RangeReadChunkMaxBytes         uint64        = 4_096
 	ReadMaxItems                   uint64        = 24
 )

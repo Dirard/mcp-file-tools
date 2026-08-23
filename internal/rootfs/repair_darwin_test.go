@@ -131,7 +131,7 @@ func TestDarwinRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	defer lease.Close()
 	path := mustDarwinRelative(t, "a/b/file", false)
 	components := path.Components()
-	parentFD, finalName, err := openDarwinParent(lease.handle, components)
+	parentFD, finalName, throughSymlink, err := openDarwinParent(lease.handle, components)
 	if err != nil {
 		t.Fatalf("open parent: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestDarwinRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(moved, "b", "file"), []byte("outside"), 0o600); err != nil {
 		t.Fatalf("insert outside file: %v", err)
 	}
-	file, _, err := openDarwinRegularAt(lease.handle, parentFD, len(components)-1, finalName)
+	file, _, err := openDarwinRegularAt(lease.handle, parentFD, len(components)-1, finalName, throughSymlink)
 	if file.valid {
 		_ = closePlatformFile(&file)
 		t.Fatal("moved parent exposed a regular file")

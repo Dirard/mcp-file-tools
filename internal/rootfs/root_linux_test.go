@@ -441,7 +441,7 @@ func TestFileReadContextRejectsOversizedBuffersBeforeRead(t *testing.T) {
 	}
 }
 
-func TestLinuxOpenat2RejectsSymlinksAndWrongKinds(t *testing.T) {
+func TestLinuxOpenat2FollowsSymlinksAndRejectsWrongKinds(t *testing.T) {
 	t.Parallel()
 
 	rootPath := t.TempDir()
@@ -471,17 +471,22 @@ func TestLinuxOpenat2RejectsSymlinksAndWrongKinds(t *testing.T) {
 	root, lease := openRootAndLease(t, rootPath)
 	defer root.Close()
 	defer lease.Close()
-	for _, raw := range []string{"relative-link", "absolute-link", "loop"} {
+	for _, raw := range []string{"relative-link", "absolute-link"} {
 		file, err := lease.OpenRegular(mustRelative(t, pathspec.POSIX, raw, false))
-		if file != nil {
+		if err != nil {
+			t.Fatalf("OpenRegular(%q) error = %v", raw, err)
+		}
+		if content := readRootFSFile(t, file); content != "inside" && content != "outside" {
 			_ = file.Close()
-			t.Fatalf("OpenRegular(%q) followed a symlink", raw)
+			t.Fatalf("OpenRegular(%q) content = %q", raw, content)
 		}
-		if !errors.Is(err, ErrSymlink) {
-			t.Fatalf("OpenRegular(%q) error = %v, want %v", raw, err, ErrSymlink)
-		}
+		_ = file.Close()
 	}
-	if directory, err := lease.OpenDir(mustRelative(t, pathspec.POSIX, "directory-link", false)); !errors.Is(err, ErrSymlink) || directory != nil {
+	if file, err := lease.OpenRegular(mustRelative(t, pathspec.POSIX, "loop", false)); !errors.Is(err, ErrSymlink) || file != nil {
+		t.Fatalf("OpenRegular(loop) = file %v, error %v", file, err)
+	}
+	if directory, err := lease.OpenDir(mustRelative(t, pathspec.POSIX, "directory-link", false)); err != nil || directory == nil {
+		_ = directory.Close()
 		t.Fatalf("OpenDir(directory-link) = directory %v, error %v", directory, err)
 	}
 	if directory, err := lease.OpenDir(mustRelative(t, pathspec.POSIX, "file", false)); !errors.Is(err, ErrNotDirectory) || directory != nil {
@@ -569,7 +574,7 @@ func TestLinuxOpenat2AllowsHardLinksInsideRoot(t *testing.T) {
 	}
 }
 
-func TestLinuxOpenat2ComponentReplacementNeverEscapes(t *testing.T) {
+func TestLinuxComponentReplacementPreservesValidTargets(t *testing.T) {
 	testLinuxComponentReplacementNeverEscapes(t, false)
 }
 
@@ -644,10 +649,10 @@ func testLinuxComponentReplacementNeverEscapes(t *testing.T, forceFallback bool)
 			<-exchangeErrors
 			t.Fatalf("file Close() error = %v", closeErr)
 		}
-		if content != "inside" {
+		if content != "inside" && content != "outside" {
 			close(stop)
 			<-exchangeErrors
-			t.Fatalf("component replacement escaped root: %q", content)
+			t.Fatalf("component replacement content = %q", content)
 		}
 	}
 	close(stop)
@@ -723,15 +728,13 @@ func TestLinuxForcedFallbackContainmentMatrix(t *testing.T) {
 	_ = hardLink.Close()
 	for _, raw := range []string{"file-link", "intermediate-link/nested"} {
 		opened, openErr := lease.OpenRegular(mustRelative(t, pathspec.POSIX, raw, false))
-		if opened != nil {
-			_ = opened.Close()
-			t.Fatalf("fallback OpenRegular(%q) followed a symlink", raw)
+		if openErr != nil {
+			t.Fatalf("fallback OpenRegular(%q) error = %v", raw, openErr)
 		}
-		if !errors.Is(openErr, ErrSymlink) {
-			t.Fatalf("fallback OpenRegular(%q) error = %v, want %v", raw, openErr, ErrSymlink)
-		}
+		_ = opened.Close()
 	}
-	if opened, openErr := lease.OpenDir(mustRelative(t, pathspec.POSIX, "directory-link", false)); !errors.Is(openErr, ErrSymlink) || opened != nil {
+	if opened, openErr := lease.OpenDir(mustRelative(t, pathspec.POSIX, "directory-link", false)); openErr != nil || opened == nil {
+		_ = opened.Close()
 		t.Fatalf("fallback OpenDir(directory-link) = directory %v, error %v", opened, openErr)
 	}
 	if opened, openErr := lease.OpenRegular(mustRelative(t, pathspec.POSIX, "fifo", false)); !errors.Is(openErr, ErrSpecial) || opened != nil {
@@ -769,14 +772,15 @@ func TestLinuxContainedOpenErrorMapping(t *testing.T) {
 	if got := classifyContainedOpenError(unix.ESTALE, false); !errors.Is(got, ErrSourceChanged) {
 		t.Fatalf("ESTALE mapping = %v, want %v", got, ErrSourceChanged)
 	}
-	wantPolicy := unix.RESOLVE_BENEATH | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV
-	if linuxResolvePolicy != wantPolicy {
-		t.Fatalf("openat2 resolve policy = %#x, want %#x", linuxResolvePolicy, wantPolicy)
+	wantStrict := unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV
+	wantSymlink := unix.RESOLVE_NO_MAGICLINKS
+	if linuxStrictResolve != wantStrict || linuxSymlinkResolve != wantSymlink {
+		t.Fatalf("resolve policies = (%#x, %#x), want (%#x, %#x)", linuxStrictResolve, linuxSymlinkResolve, wantStrict, wantSymlink)
 	}
 	if linuxDirectoryFlags != unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC {
 		t.Fatalf("directory open flags = %#x", linuxDirectoryFlags)
 	}
-	if linuxRegularFileFlags != unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK {
+	if linuxRegularFileFlags != unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NONBLOCK {
 		t.Fatalf("regular-file open flags = %#x", linuxRegularFileFlags)
 	}
 	if linuxSearchTargetFlags != linuxRegularFileFlags {

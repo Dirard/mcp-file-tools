@@ -173,7 +173,7 @@ func consumeWindowsDirectoryBuffer(directory windows.Handle, buffer []byte, reco
 }
 
 func windowsEntryEvidence(directory windows.Handle, name string, rootMount [16]byte) (EntryKind, Identity, error) {
-	handle, err := openWindowsSearchRelative(directory, name, windowsMetadataAccess)
+	handle, err := openWindowsSearchRelative(directory, name, windowsMetadataAccess, true)
 	if err != nil {
 		return 0, Identity{}, err
 	}
@@ -182,11 +182,23 @@ func windowsEntryEvidence(directory windows.Handle, name string, rootMount [16]b
 	if err != nil {
 		return 0, Identity{}, classifyWindowsEnumerationError(err)
 	}
+	throughSymlink := windowsEntryKind(attributes, reparseTag) == EntrySymlink
+	if throughSymlink {
+		_ = windows.CloseHandle(handle)
+		handle, err = openWindowsSearchRelative(directory, name, windowsMetadataAccess, false)
+		if err != nil {
+			return 0, Identity{}, err
+		}
+		attributes, reparseTag, err = windowsAttributeTag(handle)
+		if err != nil {
+			return 0, Identity{}, classifyWindowsEnumerationError(err)
+		}
+	}
 	identity, err := windowsIdentity(handle)
 	if err != nil {
 		return 0, Identity{}, classifyWindowsEnumerationError(err)
 	}
-	if identity.Mount != rootMount {
+	if !throughSymlink && identity.Mount != rootMount {
 		return EntryBoundary, identity, nil
 	}
 	return windowsEntryKind(attributes, reparseTag), identity, nil

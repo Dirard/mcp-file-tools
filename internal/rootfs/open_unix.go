@@ -30,9 +30,11 @@ type platformFile struct {
 }
 
 const (
-	darwinDirectoryFlags    = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC | unix.O_NOFOLLOW
-	darwinRegularFileFlags  = unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
-	darwinSearchTargetFlags = darwinRegularFileFlags
+	darwinDirectoryFlags         = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC
+	darwinStrictDirectoryFlags   = darwinDirectoryFlags | unix.O_NOFOLLOW
+	darwinRegularFileFlags       = unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NONBLOCK
+	darwinStrictRegularFileFlags = darwinRegularFileFlags | unix.O_NOFOLLOW
+	darwinSearchTargetFlags      = darwinRegularFileFlags
 )
 
 func openPlatformRoot(directory pathspec.RootDirectory) (platformRoot, string, Identity, error) {
@@ -105,24 +107,31 @@ func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Id
 		return handle, identity, nil
 	}
 
-	parentFD, finalName, err := openDarwinParent(root, path.Components())
+	parentFD, finalName, throughSymlink, err := openDarwinParent(root, path.Components())
 	if err != nil {
 		return platformDir{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
+	finalSymlink, symlinkErr := darwinFinalIsSymlink(parentFD, finalName)
+	if symlinkErr != nil {
+		return platformDir{}, Identity{}, symlinkErr
+	}
+	throughSymlink = throughSymlink || finalSymlink
 	fd, err := unix.Openat(parentFD, finalName, darwinDirectoryFlags, 0)
 	if err != nil {
 		return platformDir{}, Identity{}, classifyDarwinOpenError(err, true)
 	}
 	handle := platformDir{fd: fd, valid: true}
-	identity, err := verifyDarwinIdentity(fd, root.mount)
+	identity, err := verifyDarwinIdentityAllow(fd, root.mount, throughSymlink)
 	if err != nil {
 		_ = closePlatformDir(&handle)
 		return platformDir{}, Identity{}, err
 	}
-	if err := verifyDarwinAncestry(fd, len(path.Components()), root); err != nil {
-		_ = closePlatformDir(&handle)
-		return platformDir{}, Identity{}, err
+	if !throughSymlink {
+		if ancestryErr := verifyDarwinAncestry(fd, len(path.Components()), root); ancestryErr != nil {
+			_ = closePlatformDir(&handle)
+			return platformDir{}, Identity{}, ancestryErr
+		}
 	}
 	return handle, identity, nil
 }
@@ -137,15 +146,20 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 	if path.String() == "." {
 		return platformFile{}, Identity{}, ErrNotRegular
 	}
-	parentFD, finalName, err := openDarwinParent(root, path.Components())
+	parentFD, finalName, throughSymlink, err := openDarwinParent(root, path.Components())
 	if err != nil {
 		return platformFile{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
-	return openDarwinRegularAt(root, parentFD, len(path.Components())-1, finalName)
+	finalSymlink, symlinkErr := darwinFinalIsSymlink(parentFD, finalName)
+	if symlinkErr != nil {
+		return platformFile{}, Identity{}, symlinkErr
+	}
+	throughSymlink = throughSymlink || finalSymlink
+	return openDarwinRegularAt(root, parentFD, len(path.Components())-1, finalName, throughSymlink)
 }
 
-func openDarwinRegularAt(root platformRoot, parentFD, parentDepth int, finalName string) (platformFile, Identity, error) {
+func openDarwinRegularAt(root platformRoot, parentFD, parentDepth int, finalName string, throughSymlink bool) (platformFile, Identity, error) {
 	fd, err := unix.Openat(parentFD, finalName, darwinRegularFileFlags, 0)
 	if err != nil {
 		return platformFile{}, Identity{}, classifyDarwinOpenError(err, false)
@@ -164,14 +178,16 @@ func openDarwinRegularAt(root platformRoot, parentFD, parentDepth int, finalName
 		}
 		return platformFile{}, Identity{}, ErrSpecial
 	}
-	identity, err := verifyDarwinIdentity(fd, root.mount)
+	identity, err := verifyDarwinIdentityAllow(fd, root.mount, throughSymlink)
 	if err != nil {
 		_ = closePlatformFile(&handle)
 		return platformFile{}, Identity{}, err
 	}
-	if err := verifyDarwinAncestry(parentFD, parentDepth, root); err != nil {
-		_ = closePlatformFile(&handle)
-		return platformFile{}, Identity{}, err
+	if !throughSymlink {
+		if ancestryErr := verifyDarwinAncestry(parentFD, parentDepth, root); ancestryErr != nil {
+			_ = closePlatformFile(&handle)
+			return platformFile{}, Identity{}, ancestryErr
+		}
 	}
 	return handle, identity, nil
 }
@@ -200,11 +216,16 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return SearchTargetDirectory, platformDir{fd: fd, valid: true}, platformFile{}, identity, nil
 	}
 	components := path.Components()
-	parentFD, finalName, err := openDarwinParent(root, components)
+	parentFD, finalName, throughSymlink, err := openDarwinParent(root, components)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
+	finalSymlink, symlinkErr := darwinFinalIsSymlink(parentFD, finalName)
+	if symlinkErr != nil {
+		return 0, platformDir{}, platformFile{}, Identity{}, symlinkErr
+	}
+	throughSymlink = throughSymlink || finalSymlink
 	fd, err := unix.Openat(parentFD, finalName, darwinSearchTargetFlags, 0)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, classifyDarwinOpenError(err, false)
@@ -215,15 +236,11 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrIO
 	}
 	mode := uint32(stat.Mode) & unix.S_IFMT
-	if mode == unix.S_IFLNK {
-		_ = unix.Close(fd)
-		return 0, platformDir{}, platformFile{}, Identity{}, ErrSymlink
-	}
 	if mode != unix.S_IFDIR && mode != unix.S_IFREG {
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrSpecial
 	}
-	identity, err := verifyDarwinIdentity(fd, root.mount)
+	identity, err := verifyDarwinIdentityAllow(fd, root.mount, throughSymlink)
 	if err != nil {
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, err
@@ -234,9 +251,11 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 		ancestryFD = fd
 		ancestryDepth = len(components)
 	}
-	if err := verifyDarwinAncestry(ancestryFD, ancestryDepth, root); err != nil {
-		_ = unix.Close(fd)
-		return 0, platformDir{}, platformFile{}, Identity{}, err
+	if !throughSymlink {
+		if ancestryErr := verifyDarwinAncestry(ancestryFD, ancestryDepth, root); ancestryErr != nil {
+			_ = unix.Close(fd)
+			return 0, platformDir{}, platformFile{}, Identity{}, ancestryErr
+		}
 	}
 	if mode == unix.S_IFDIR {
 		return SearchTargetDirectory, platformDir{fd: fd, valid: true}, platformFile{}, identity, nil
@@ -278,29 +297,38 @@ func verifyDarwinAncestry(directoryFD, depth int, root platformRoot) error {
 	return nil
 }
 
-func openDarwinParent(root platformRoot, components []string) (int, string, error) {
+func openDarwinParent(root platformRoot, components []string) (int, string, bool, error) {
 	if len(components) == 0 {
-		return -1, "", ErrIO
+		return -1, "", false, ErrIO
 	}
 	parentFD, err := unix.FcntlInt(uintptr(root.fd), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
-		return -1, "", classifyDarwinOpenError(err, true)
+		return -1, "", false, classifyDarwinOpenError(err, true)
 	}
+	throughSymlink := false
 	for _, component := range components[:len(components)-1] {
-		childFD, openErr := unix.Openat(parentFD, component, darwinDirectoryFlags, 0)
+		childFD, openErr := unix.Openat(parentFD, component, darwinStrictDirectoryFlags, 0)
 		if openErr != nil {
 			_ = unix.Close(parentFD)
-			return -1, "", classifyDarwinOpenError(openErr, true)
+			if !errors.Is(openErr, unix.ELOOP) {
+				return -1, "", false, classifyDarwinOpenError(openErr, true)
+			}
+			childFD, openErr = unix.Openat(parentFD, component, darwinDirectoryFlags, 0)
+			if openErr != nil {
+				_ = unix.Close(parentFD)
+				return -1, "", false, classifyDarwinOpenError(openErr, true)
+			}
+			throughSymlink = true
 		}
-		if _, proofErr := verifyDarwinIdentity(childFD, root.mount); proofErr != nil {
+		if _, proofErr := verifyDarwinIdentityAllow(childFD, root.mount, throughSymlink); proofErr != nil {
 			_ = unix.Close(childFD)
 			_ = unix.Close(parentFD)
-			return -1, "", proofErr
+			return -1, "", false, proofErr
 		}
 		_ = unix.Close(parentFD)
 		parentFD = childFD
 	}
-	return parentFD, components[len(components)-1], nil
+	return parentFD, components[len(components)-1], throughSymlink, nil
 }
 
 func closePlatformDir(handle *platformDir) error {
@@ -357,14 +385,26 @@ func darwinIdentity(fd int) (Identity, error) {
 }
 
 func verifyDarwinIdentity(fd int, rootMount [16]byte) (Identity, error) {
+	return verifyDarwinIdentityAllow(fd, rootMount, false)
+}
+
+func verifyDarwinIdentityAllow(fd int, rootMount [16]byte, allowCrossMount bool) (Identity, error) {
 	identity, err := darwinIdentity(fd)
 	if err != nil {
 		return Identity{}, ErrIO
 	}
-	if identity.Mount != rootMount {
+	if !allowCrossMount && identity.Mount != rootMount {
 		return Identity{}, ErrMountBoundary
 	}
 	return identity, nil
+}
+
+func darwinFinalIsSymlink(parentFD int, name string) (bool, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(parentFD, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return false, classifyDarwinOpenError(err, false)
+	}
+	return stat.Mode&unix.S_IFMT == unix.S_IFLNK, nil
 }
 
 func darwinPathFromFD(fd int) (string, error) {

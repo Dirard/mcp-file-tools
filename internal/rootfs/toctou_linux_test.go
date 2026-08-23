@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestEnumeratedIdentityRejectsEveryComponentReplacementBeforeContent(t *testing.T) {
+func TestEnumeratedIdentityDetectsEveryComponentReplacementBeforeContent(t *testing.T) {
 	for _, forceFallback := range []bool{false, true} {
 		backend := "openat2"
 		if forceFallback {
@@ -79,23 +79,13 @@ func testEnumeratedIdentityReplacement(t *testing.T, forceFallback bool, compone
 
 	path := mustRelative(t, pathspec.POSIX, "a/b/file", false)
 	target, err := lease.OpenSearchTarget(path)
-	if replacementKind == "symlink" {
-		if target != nil {
-			_ = target.Close()
-			t.Fatal("symlink replacement exposed a search target")
-		}
-		if !errors.Is(err, ErrSymlink) {
-			t.Fatalf("symlink replacement error = %v, want %v", err, ErrSymlink)
-		}
-		return
-	}
 	if err != nil {
-		t.Fatalf("same-kind replacement OpenSearchTarget() error = %v", err)
+		t.Fatalf("%s replacement OpenSearchTarget() error = %v", replacementKind, err)
 	}
 	file, err := target.TakeFile()
 	if err != nil {
 		_ = target.Close()
-		t.Fatalf("same-kind replacement TakeFile() error = %v", err)
+		t.Fatalf("%s replacement TakeFile() error = %v", replacementKind, err)
 	}
 	defer file.Close()
 	if file.Identity() == enumerated.Identity {
@@ -167,7 +157,7 @@ func TestRepeatedOpenBranchesDoNotLeakPlatformHandles(t *testing.T) {
 				t.Fatalf("directory target Close() error = %v", err)
 			}
 
-			for name, want := range map[string]error{"fifo": ErrSpecial, "symlink": ErrSymlink, "missing": ErrNotFound} {
+			for name, want := range map[string]error{"fifo": ErrSpecial, "missing": ErrNotFound} {
 				target, openErr := lease.OpenSearchTarget(paths[name])
 				if target != nil {
 					_ = target.Close()
@@ -176,6 +166,19 @@ func TestRepeatedOpenBranchesDoNotLeakPlatformHandles(t *testing.T) {
 				if !errors.Is(openErr, want) {
 					t.Fatalf("OpenSearchTarget(%s) error = %v, want %v", name, openErr, want)
 				}
+			}
+			symlinkTarget, symlinkErr := lease.OpenSearchTarget(paths["symlink"])
+			if symlinkErr != nil {
+				t.Fatalf("OpenSearchTarget(symlink) error = %v", symlinkErr)
+			}
+			symlinkFile, symlinkFileErr := symlinkTarget.TakeFile()
+			if symlinkFileErr != nil {
+				_ = symlinkTarget.Close()
+				t.Fatalf("TakeFile(symlink) error = %v", symlinkFileErr)
+			}
+			_ = symlinkTarget.Close()
+			if err := symlinkFile.Close(); err != nil {
+				t.Fatal(err)
 			}
 		}
 		after := openDescriptorCount(t)

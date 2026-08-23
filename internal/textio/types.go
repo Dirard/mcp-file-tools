@@ -45,7 +45,6 @@ type Line struct {
 	Number  uint64
 	Bytes   []byte
 	ByteLen uint64
-	TooLong bool
 }
 
 type LineSink interface {

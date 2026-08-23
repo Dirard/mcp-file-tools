@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/Dirard/mcp-file-tools/internal/api"
-	"github.com/Dirard/mcp-file-tools/internal/config"
 )
 
 const (
@@ -67,7 +66,6 @@ func (line ReadLine) Text() string {
 
 func (line ReadLine) Validate() error {
 	if line.number == 0 || line.number > maxReadLineNumber ||
-		uint64(len(line.text)) > config.SourceLineMaxBytes ||
 		!utf8.ValidString(line.text) ||
 		strings.IndexByte(line.text, '\r') >= 0 ||
 		strings.IndexByte(line.text, '\n') >= 0 {
@@ -531,7 +529,6 @@ func readItemErrorCode(code api.ErrorCode) bool {
 		api.ErrorBinary,
 		api.ErrorUnsupportedEncoding,
 		api.ErrorUnsupportedLanguage,
-		api.ErrorLineTooLong,
 		api.ErrorBudgetExceeded,
 		api.ErrorPermissionDenied,
 		api.ErrorIOError,

@@ -156,7 +156,7 @@ func TestTextSearchBroadWarningsAndExplicitBinaryError(t *testing.T) {
 
 	broad := fixture.search(t, fmt.Sprintf(`{"cwd_id":%d,"query":"needle","mode":"text"}`, fixture.cwdID))
 	broadText := resultText(t, broad)
-	if broad.Result.IsError() || !strings.Contains(broadText, "!\tbinary_skipped\tcount=1") || !strings.Contains(broadText, "!\tline_too_long_skipped\tcount=1") {
+	if broad.Result.IsError() || !strings.Contains(broadText, "!\tbinary_skipped\tcount=1") {
 		t.Fatalf("broad text result:\n%s", broadText)
 	}
 

@@ -242,6 +242,7 @@ func (service *Service) advanceInitial(
 	if !working.incrementDir() {
 		return Batch{}, nil, api.ErrorBudgetExceeded
 	}
+	working.markDirectory(value.identity)
 	rootCandidate := working.candidate(value.resolved, rootfs.EntryDir, value.identity, 0, deadline)
 	if resultCode := working.applyConsumeResult(consumer.Consume(ctx, rootCandidate, nil), rootCandidate); resultCode != "" {
 		return Batch{}, nil, resultCode
@@ -528,12 +529,16 @@ func (state *State) processDirectory(ctx context.Context, deadline time.Time, di
 	if unit.identityKnown && directory.Identity() != unit.identity {
 		return state.addWarning(unit.path.String(), api.WarningSourceChangedSkipped)
 	}
-	if !state.incrementDir() {
-		return true, api.ErrorBudgetExceeded
-	}
+	duplicate := !state.markDirectory(directory.Identity())
 	candidate := state.candidate(directory.ResolvedPath(), rootfs.EntryDir, directory.Identity(), unit.depth, deadline)
 	if candidate.Path.Target() != unit.path.Target() {
 		return true, api.ErrorCursorExpired
+	}
+	if duplicate {
+		return true, state.applyConsumeResult(consumer.Consume(ctx, candidate, nil), candidate)
+	}
+	if !state.incrementDir() {
+		return true, api.ErrorBudgetExceeded
 	}
 	if resultCode := state.applyConsumeResult(consumer.Consume(ctx, candidate, nil), candidate); resultCode != "" {
 		return true, resultCode
@@ -544,6 +549,17 @@ func (state *State) processDirectory(ctx context.Context, deadline time.Time, di
 		}
 	}
 	return true, ""
+}
+
+func (state *State) markDirectory(identity rootfs.Identity) bool {
+	if state.seenDirs == nil {
+		state.seenDirs = make(map[rootfs.Identity]struct{})
+	}
+	if _, seen := state.seenDirs[identity]; seen {
+		return false
+	}
+	state.seenDirs[identity] = struct{}{}
+	return true
 }
 
 func (state *State) processFile(ctx context.Context, deadline time.Time, file *rootfs.File, unit scanUnit, consumer Consumer) (progress bool, code api.ErrorCode) {

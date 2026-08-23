@@ -28,7 +28,7 @@ func BufferCanonical(ctx context.Context, file *rootfs.File, domain Domain, budg
 		return CanonicalBuffer{}, api.ErrorInvalidInput
 	}
 	sink := &bufferSink{maxBytes: maxCanonicalBytes}
-	summary, code := streamCanonicalWithLimits(ctx, file, domain, budget, sink, maxCanonicalBytes+1, maxCanonicalBytes)
+	summary, code := streamCanonicalWithLimits(ctx, file, domain, budget, sink, maxCanonicalBytes)
 	if code != "" {
 		return CanonicalBuffer{Summary: summary}, code
 	}
@@ -71,7 +71,7 @@ type bufferSink struct {
 }
 
 func (sink *bufferSink) Consume(line Line) error {
-	if line.TooLong || line.ByteLen != uint64(len(line.Bytes)) {
+	if line.ByteLen != uint64(len(line.Bytes)) {
 		return sinkCodeError{code: api.ErrorBudgetExceeded}
 	}
 	if line.Number != uint64(len(sink.lines))+1 || line.Number > math.MaxUint32 {

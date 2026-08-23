@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	"github.com/Dirard/mcp-file-tools/internal/api"
-	"github.com/Dirard/mcp-file-tools/internal/config"
 	"github.com/Dirard/mcp-file-tools/internal/navmodel"
 	"github.com/Dirard/mcp-file-tools/internal/rootfs"
 )
@@ -24,6 +23,7 @@ type State struct {
 	pending  []Row
 	counters Counters
 	warnings navmodel.Accumulator
+	seenDirs map[rootfs.Identity]struct{}
 	started  bool
 }
 
@@ -80,6 +80,12 @@ func (state *State) Clone() *State {
 		copy(clone.frontier, state.frontier)
 	}
 	clone.pending = cloneRows(state.pending)
+	if state.seenDirs != nil {
+		clone.seenDirs = make(map[rootfs.Identity]struct{}, len(state.seenDirs))
+		for identity := range state.seenDirs {
+			clone.seenDirs[identity] = struct{}{}
+		}
+	}
 	if state.request.Glob != nil {
 		compiled := *state.request.Glob
 		clone.request.Glob = &compiled
@@ -104,6 +110,7 @@ func (state *State) Footprint() uint64 {
 	bytes += state.frontier.retainedBytes()
 	bytes += rowsRetainedBytes(state.pending)
 	bytes += state.warnings.Footprint()
+	bytes += uint64(len(state.seenDirs)) * (uint64(unsafe.Sizeof(rootfs.Identity{})) + 1)
 	return bytes
 }
 
@@ -150,6 +157,16 @@ func (state *State) Digest() [32]byte {
 	for _, row := range state.pending {
 		writeDigestBytes(digest, encodeRowKey(row))
 	}
+	seen := make([]rootfs.Identity, 0, len(state.seenDirs))
+	for identity := range state.seenDirs {
+		seen = append(seen, identity)
+	}
+	sort.Slice(seen, func(left, right int) bool { return compareIdentities(seen[left], seen[right]) < 0 })
+	for _, identity := range seen {
+		writeDigestUint64(digest, uint64(identity.Platform))
+		digest.Write(identity.Mount[:])
+		digest.Write(identity.File[:])
+	}
 	for _, warning := range state.warnings.Summaries() {
 		writeDigestString(digest, string(warning.Code()))
 		writeDigestUint64(digest, warning.Count())
@@ -159,6 +176,13 @@ func (state *State) Digest() [32]byte {
 	var result [32]byte
 	copy(result[:], digest.Sum(nil))
 	return result
+}
+
+func compareIdentities(left, right rootfs.Identity) int {
+	if compared := strings.Compare(string(left.Mount[:]), string(right.Mount[:])); compared != 0 {
+		return compared
+	}
+	return strings.Compare(string(left.File[:]), string(right.File[:]))
 }
 
 func (state *State) Tool() api.ToolName {
@@ -252,7 +276,7 @@ func validRowForMode(row Row, mode Mode, candidatePath string) bool {
 		return row.Kind == RowFile && row.Line == 0 && row.Text == "" && !row.Range.Valid() && row.SymbolKind == "" && row.Name == ""
 	case TextSearch:
 		return (row.Kind == RowTextMatch || row.Kind == RowTextContext) && row.Line > 0 &&
-			uint64(len(row.Text)) <= config.SearchScanLineMaxBytes && utf8.ValidString(row.Text) && !row.Range.Valid() && row.SymbolKind == "" && row.Name == ""
+			utf8.ValidString(row.Text) && !row.Range.Valid() && row.SymbolKind == "" && row.Name == ""
 	case SymbolSearch:
 		return row.Kind == RowSymbol && row.Line == 0 && row.Text == "" && row.Range.Valid() && row.SymbolKind.Valid() &&
 			row.Name != "" && len(row.Name) <= api.InputStringMaxBytes && utf8.ValidString(row.Name)

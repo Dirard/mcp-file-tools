@@ -183,7 +183,7 @@ func validSearchRow(mode SearchMode, row SearchRow) bool {
 		return row.Kind == SearchFileRow && row.Line == 0 && row.Text == "" && row.Range == (navmodel.Range{}) && row.SymbolKind == "" && row.Name == ""
 	case SearchText:
 		return (row.Kind == SearchMatchRow || row.Kind == SearchContextRow) && row.Line != 0 &&
-			uint64(len(row.Text)) <= config.SearchScanLineMaxBytes && utf8.ValidString(row.Text) &&
+			utf8.ValidString(row.Text) &&
 			strings.IndexByte(row.Text, '\r') < 0 && strings.IndexByte(row.Text, '\n') < 0 &&
 			row.Range == (navmodel.Range{}) && row.SymbolKind == "" && row.Name == ""
 	case SearchSymbol:

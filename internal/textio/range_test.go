@@ -113,7 +113,7 @@ func TestLifecycleAndChargeFailuresAreBudgetExceeded(t *testing.T) {
 	}
 }
 
-func TestStreamClassifiesOverlongLinesWithoutRetainingThem(t *testing.T) {
+func TestStreamRetainsLongLines(t *testing.T) {
 	raw := []byte(strings.Repeat("a", 4096) + "\n" + strings.Repeat("b", 4097) + "\n")
 	file := openTextFile(t, raw)
 	defer file.Close()
@@ -125,10 +125,10 @@ func TestStreamClassifiesOverlongLinesWithoutRetainingThem(t *testing.T) {
 	if len(sink.lines) != 2 {
 		t.Fatalf("lines = %d", len(sink.lines))
 	}
-	if sink.lines[0].ByteLen != 4096 || sink.lines[0].TooLong || len(sink.lines[0].Bytes) != 4096 {
+	if sink.lines[0].ByteLen != 4096 || len(sink.lines[0].Bytes) != 4096 {
 		t.Fatalf("4096-byte line = %#v", sink.lines[0])
 	}
-	if sink.lines[1].ByteLen != 4097 || !sink.lines[1].TooLong || sink.lines[1].Bytes != nil {
+	if sink.lines[1].ByteLen != 4097 || len(sink.lines[1].Bytes) != 4097 {
 		t.Fatalf("4097-byte line = %#v", sink.lines[1])
 	}
 }
@@ -154,7 +154,7 @@ func TestRangeSinkSelectsLiteralRowsAndClampsEOF(t *testing.T) {
 	}
 }
 
-func TestRangeSinkValidatesRangeAndEligibleLineLength(t *testing.T) {
+func TestRangeSinkValidatesRange(t *testing.T) {
 	if _, code := NewRangeSink(0, 1, ^uint64(0)); code != api.ErrorInvalidInput {
 		t.Fatalf("zero start code = %q", code)
 	}
@@ -168,14 +168,6 @@ func TestRangeSinkValidatesRangeAndEligibleLineLength(t *testing.T) {
 	_ = file.Close()
 	if code != "" || sink.Finish(summary) != api.ErrorInvalidInput {
 		t.Fatalf("start after EOF: stream=%q finish=%q", code, sink.Finish(summary))
-	}
-
-	file = openTextFile(t, []byte(strings.Repeat("x", 4097)+"\n"))
-	sink, _ = NewRangeSink(1, 1, ^uint64(0))
-	_, code = StreamCanonical(context.Background(), file, Domain{ThroughLine: 1}, unlimitedBudget(), sink)
-	_ = file.Close()
-	if code != api.ErrorLineTooLong {
-		t.Fatalf("overlong selected line code = %q", code)
 	}
 
 	file = openTextFile(t, nil)

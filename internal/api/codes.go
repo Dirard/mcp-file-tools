@@ -11,7 +11,6 @@ const (
 	ErrorBinary              ErrorCode = "binary"
 	ErrorUnsupportedEncoding ErrorCode = "unsupported_encoding"
 	ErrorUnsupportedLanguage ErrorCode = "unsupported_language"
-	ErrorLineTooLong         ErrorCode = "line_too_long"
 	ErrorRecordExceedsBudget ErrorCode = "record_exceeds_budget"
 	ErrorCursorExpired       ErrorCode = "cursor_expired"
 	ErrorCursorWrongTool     ErrorCode = "cursor_wrong_tool"
@@ -23,8 +22,8 @@ const (
 )
 
 // OrderedErrorCodes returns the canonical error-code order.
-func OrderedErrorCodes() [16]ErrorCode {
-	return [16]ErrorCode{
+func OrderedErrorCodes() [15]ErrorCode {
+	return [15]ErrorCode{
 		ErrorInvalidInput,
 		ErrorCWDUnknown,
 		ErrorPathOutsideCWD,
@@ -32,7 +31,6 @@ func OrderedErrorCodes() [16]ErrorCode {
 		ErrorBinary,
 		ErrorUnsupportedEncoding,
 		ErrorUnsupportedLanguage,
-		ErrorLineTooLong,
 		ErrorRecordExceedsBudget,
 		ErrorCursorExpired,
 		ErrorCursorWrongTool,
@@ -54,7 +52,6 @@ func (code ErrorCode) Valid() bool {
 		ErrorBinary,
 		ErrorUnsupportedEncoding,
 		ErrorUnsupportedLanguage,
-		ErrorLineTooLong,
 		ErrorRecordExceedsBudget,
 		ErrorCursorExpired,
 		ErrorCursorWrongTool,
@@ -84,12 +81,11 @@ const (
 	WarningSymlinkSkipped             WarningCode = "symlink_skipped"
 	WarningMountSkipped               WarningCode = "mount_skipped"
 	WarningUnaddressablePathSkipped   WarningCode = "unaddressable_path_skipped"
-	WarningLineTooLongSkipped         WarningCode = "line_too_long_skipped"
 )
 
 // OrderedWarningCodes returns the canonical warning-code order.
-func OrderedWarningCodes() [12]WarningCode {
-	return [12]WarningCode{
+func OrderedWarningCodes() [11]WarningCode {
+	return [11]WarningCode{
 		WarningBinarySkipped,
 		WarningParserPartial,
 		WarningParserSkipped,
@@ -101,7 +97,6 @@ func OrderedWarningCodes() [12]WarningCode {
 		WarningSymlinkSkipped,
 		WarningMountSkipped,
 		WarningUnaddressablePathSkipped,
-		WarningLineTooLongSkipped,
 	}
 }
 
@@ -118,8 +113,7 @@ func (code WarningCode) Valid() bool {
 		WarningSourceChangedSkipped,
 		WarningSymlinkSkipped,
 		WarningMountSkipped,
-		WarningUnaddressablePathSkipped,
-		WarningLineTooLongSkipped:
+		WarningUnaddressablePathSkipped:
 		return true
 	default:
 		return false

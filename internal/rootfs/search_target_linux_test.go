@@ -293,7 +293,7 @@ func TestVerifiedFileReadContractAndExactlyOnceClose(t *testing.T) {
 	}
 }
 
-func TestOpenSearchTargetAllowsHardLinksAndRejectsSymlinkAndMount(t *testing.T) {
+func TestOpenSearchTargetAllowsHardLinksAndSymlinksButRejectsMounts(t *testing.T) {
 	t.Parallel()
 
 	rootPath := t.TempDir()
@@ -331,11 +331,19 @@ func TestOpenSearchTargetAllowsHardLinksAndRejectsSymlinkAndMount(t *testing.T) 
 	if firstFile.Identity() != linkedFile.Identity() {
 		t.Fatalf("hard-link identities differ: %#v != %#v", firstFile.Identity(), linkedFile.Identity())
 	}
-	if target, err := lease.OpenSearchTarget(mustRelative(t, pathspec.POSIX, "symlink", false)); target != nil || !errors.Is(err, ErrSymlink) {
-		if target != nil {
-			_ = target.Close()
-		}
-		t.Fatalf("OpenSearchTarget(symlink) = target %v, error %v", target, err)
+	target, err := lease.OpenSearchTarget(mustRelative(t, pathspec.POSIX, "symlink", false))
+	if err != nil {
+		t.Fatalf("OpenSearchTarget(symlink) error = %v", err)
+	}
+	targetFile, err := target.TakeFile()
+	if err != nil {
+		_ = target.Close()
+		t.Fatalf("TakeFile(symlink) error = %v", err)
+	}
+	defer targetFile.Close()
+	_ = target.Close()
+	if targetFile.Identity() != firstFile.Identity() {
+		t.Fatalf("symlink identity = %#v, want %#v", targetFile.Identity(), firstFile.Identity())
 	}
 
 	filesystemRoot, filesystemLease := openRootAndLease(t, "/")

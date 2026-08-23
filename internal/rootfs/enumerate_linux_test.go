@@ -105,8 +105,8 @@ func TestLinuxReadEntriesPreservesPhysicalOrderAndChargesRawRecordsFirst(t *test
 	}
 	wantKinds := map[string]EntryKind{
 		"c": EntryFile, "a": EntryFile, "b": EntryFile,
-		".git": EntryDir, ".svn": EntryFile, "node_modules": EntrySymlink, ".hg": EntrySpecial,
-		"link": EntrySymlink, "fifo": EntrySpecial,
+		".git": EntryDir, ".svn": EntryFile, "node_modules": EntryDir, ".hg": EntrySpecial,
+		"link": EntryFile, "fifo": EntrySpecial,
 	}
 	for path, want := range wantKinds {
 		if got := kinds[path]; got != want {

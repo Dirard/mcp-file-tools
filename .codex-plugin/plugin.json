@@ -1,6 +1,6 @@
 {
   "name": "mcp-file-tools",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Read-only, token-efficient project navigation for Codex.",
   "author": {
     "name": "Dirard",

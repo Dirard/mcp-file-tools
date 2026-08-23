@@ -106,7 +106,6 @@ type textSearchSink struct {
 	previous         []retainedTextLine
 	afterUntil       uint64
 	lastEmitted      uint64
-	tooLong          bool
 	rows             []scanner.Row
 	rowStrings       uint64
 	maxRetainedBytes uint64
@@ -115,10 +114,6 @@ type textSearchSink struct {
 
 func (sink *textSearchSink) Consume(line textio.Line) error {
 	sink.prunePrevious(line.Number)
-	if line.TooLong {
-		sink.tooLong = true
-		return nil
-	}
 	matched := sink.matcher.Match(line.Bytes)
 	needsText := matched || line.Number <= sink.afterUntil || sink.context != 0
 	if !needsText {
@@ -247,9 +242,6 @@ func (consumer *searchConsumer) consumeText(ctx context.Context, candidate scann
 		return consumer.mapTextReadFailure(result, code)
 	}
 	result.Rows = sink.rows
-	if sink.tooLong {
-		result.Warning = api.WarningLineTooLongSkipped
-	}
 	return result
 }
 

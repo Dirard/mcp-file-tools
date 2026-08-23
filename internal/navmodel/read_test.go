@@ -19,8 +19,8 @@ func TestReadViewAndLine(t *testing.T) {
 		}
 	}
 
-	line, err := NewReadLine(2147483647, strings.Repeat("x", 4096))
-	if err != nil || line.Number() != 2147483647 || len(line.Text()) != 4096 || line.Validate() != nil {
+	line, err := NewReadLine(2147483647, strings.Repeat("x", 4097))
+	if err != nil || line.Number() != 2147483647 || len(line.Text()) != 4097 || line.Validate() != nil {
 		t.Fatalf("valid boundary line rejected: line=%+v err=%v", line, err)
 	}
 
@@ -32,7 +32,6 @@ func TestReadViewAndLine(t *testing.T) {
 		{2147483648, "x"},
 		{1, "bad\nline"},
 		{1, "bad\rline"},
-		{1, strings.Repeat("x", 4097)},
 		{1, string([]byte{0xff})},
 	}
 	for _, test := range invalid {
@@ -111,7 +110,7 @@ func TestReadItemConstructors(t *testing.T) {
 	allowed := map[api.ErrorCode]bool{
 		api.ErrorInvalidInput: true, api.ErrorNotFound: true, api.ErrorBinary: true,
 		api.ErrorUnsupportedEncoding: true, api.ErrorUnsupportedLanguage: true,
-		api.ErrorLineTooLong: true, api.ErrorBudgetExceeded: true,
+		api.ErrorBudgetExceeded:   true,
 		api.ErrorPermissionDenied: true, api.ErrorIOError: true, api.ErrorParserFailed: true,
 	}
 	for _, code := range api.OrderedErrorCodes() {

@@ -9,7 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const linuxPathComponentFlags = unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC
+const (
+	linuxPathComponentFlags       = unix.O_PATH | unix.O_CLOEXEC
+	linuxStrictPathComponentFlags = linuxPathComponentFlags | unix.O_NOFOLLOW
+)
 
 func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDir, Identity, error) {
 	if !root.mountProof {
@@ -21,7 +24,7 @@ func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDi
 			return platformDir{}, Identity{}, classifyFallbackOpenError(err, true)
 		}
 		handle := platformDir{fd: fd, valid: true}
-		identity, err := verifyLinuxFallbackIdentity(fd, root)
+		identity, err := verifyLinuxFallbackIdentity(fd, root, false)
 		if err != nil {
 			_ = closePlatformDir(&handle)
 			return platformDir{}, Identity{}, err
@@ -34,11 +37,16 @@ func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDi
 	}
 
 	components := path.Components()
-	parentFD, finalName, err := openLinuxFallbackParent(root, components)
+	parentFD, finalName, throughSymlink, err := openLinuxFallbackParent(root, components)
 	if err != nil {
 		return platformDir{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
+	finalSymlink, err := linuxFallbackFinalIsSymlink(parentFD, finalName)
+	if err != nil {
+		return platformDir{}, Identity{}, err
+	}
+	throughSymlink = throughSymlink || finalSymlink
 	pathFD, err := unix.Openat(parentFD, finalName, linuxPathComponentFlags, 0)
 	if err != nil {
 		return platformDir{}, Identity{}, classifyFallbackOpenError(err, true)
@@ -49,13 +57,10 @@ func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDi
 	if err != nil {
 		return platformDir{}, Identity{}, ErrIO
 	}
-	if mode == unix.S_IFLNK {
-		return platformDir{}, Identity{}, ErrSymlink
-	}
 	if mode != unix.S_IFDIR {
 		return platformDir{}, Identity{}, ErrNotDirectory
 	}
-	pathIdentity, err := verifyLinuxFallbackIdentity(pathFD, root)
+	pathIdentity, err := verifyLinuxFallbackIdentity(pathFD, root, throughSymlink)
 	if err != nil {
 		return platformDir{}, Identity{}, err
 	}
@@ -64,7 +69,7 @@ func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDi
 		return platformDir{}, Identity{}, classifyFallbackOpenError(err, true)
 	}
 	handle := platformDir{fd: readFD, valid: true}
-	identity, err := verifyLinuxFallbackIdentity(readFD, root)
+	identity, err := verifyLinuxFallbackIdentity(readFD, root, throughSymlink)
 	if err != nil {
 		_ = closePlatformDir(&handle)
 		return platformDir{}, Identity{}, err
@@ -72,10 +77,6 @@ func openLinuxFallbackDir(root platformRoot, path pathspec.Relative) (platformDi
 	if identity != pathIdentity {
 		_ = closePlatformDir(&handle)
 		return platformDir{}, Identity{}, ErrSourceChanged
-	}
-	if err := verifyLinuxFallbackAncestry(readFD, len(components), root); err != nil {
-		_ = closePlatformDir(&handle)
-		return platformDir{}, Identity{}, err
 	}
 	return handle, identity, nil
 }
@@ -88,15 +89,20 @@ func openLinuxFallbackRegular(root platformRoot, path pathspec.Relative) (platfo
 		return platformFile{}, Identity{}, ErrNotRegular
 	}
 	components := path.Components()
-	parentFD, finalName, err := openLinuxFallbackParent(root, components)
+	parentFD, finalName, throughSymlink, err := openLinuxFallbackParent(root, components)
 	if err != nil {
 		return platformFile{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
-	return openLinuxFallbackRegularAt(root, parentFD, len(components)-1, finalName)
+	finalSymlink, symlinkErr := linuxFallbackFinalIsSymlink(parentFD, finalName)
+	if symlinkErr != nil {
+		return platformFile{}, Identity{}, symlinkErr
+	}
+	throughSymlink = throughSymlink || finalSymlink
+	return openLinuxFallbackRegularAt(root, parentFD, finalName, throughSymlink)
 }
 
-func openLinuxFallbackRegularAt(root platformRoot, parentFD, parentDepth int, finalName string) (platformFile, Identity, error) {
+func openLinuxFallbackRegularAt(root platformRoot, parentFD int, finalName string, throughSymlink bool) (platformFile, Identity, error) {
 	fd, err := unix.Openat(parentFD, finalName, linuxRegularFileFlags, 0)
 	if err != nil {
 		return platformFile{}, Identity{}, classifyFallbackOpenError(err, false)
@@ -114,12 +120,8 @@ func openLinuxFallbackRegularAt(root platformRoot, parentFD, parentDepth int, fi
 		}
 		return platformFile{}, Identity{}, ErrSpecial
 	}
-	identity, err := verifyLinuxFallbackIdentity(fd, root)
+	identity, err := verifyLinuxFallbackIdentity(fd, root, throughSymlink)
 	if err != nil {
-		_ = closePlatformFile(&handle)
-		return platformFile{}, Identity{}, err
-	}
-	if err := verifyLinuxFallbackAncestry(parentFD, parentDepth, root); err != nil {
 		_ = closePlatformFile(&handle)
 		return platformFile{}, Identity{}, err
 	}
@@ -135,7 +137,7 @@ func openLinuxFallbackSearchTarget(root platformRoot, path pathspec.Relative) (S
 		if err != nil {
 			return 0, platformDir{}, platformFile{}, Identity{}, classifyFallbackOpenError(err, true)
 		}
-		identity, err := verifyLinuxFallbackIdentity(fd, root)
+		identity, err := verifyLinuxFallbackIdentity(fd, root, false)
 		if err != nil {
 			_ = unix.Close(fd)
 			return 0, platformDir{}, platformFile{}, Identity{}, err
@@ -147,11 +149,16 @@ func openLinuxFallbackSearchTarget(root platformRoot, path pathspec.Relative) (S
 		return SearchTargetDirectory, platformDir{fd: fd, valid: true}, platformFile{}, identity, nil
 	}
 	components := path.Components()
-	parentFD, finalName, err := openLinuxFallbackParent(root, components)
+	parentFD, finalName, throughSymlink, err := openLinuxFallbackParent(root, components)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
 	defer unix.Close(parentFD)
+	finalSymlink, symlinkErr := linuxFallbackFinalIsSymlink(parentFD, finalName)
+	if symlinkErr != nil {
+		return 0, platformDir{}, platformFile{}, Identity{}, symlinkErr
+	}
+	throughSymlink = throughSymlink || finalSymlink
 	fd, err := unix.Openat(parentFD, finalName, linuxSearchTargetFlags, 0)
 	if err != nil {
 		return 0, platformDir{}, platformFile{}, Identity{}, classifyFallbackOpenError(err, false)
@@ -161,26 +168,12 @@ func openLinuxFallbackSearchTarget(root platformRoot, path pathspec.Relative) (S
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrIO
 	}
-	if mode == unix.S_IFLNK {
-		_ = unix.Close(fd)
-		return 0, platformDir{}, platformFile{}, Identity{}, ErrSymlink
-	}
 	if mode != unix.S_IFDIR && mode != unix.S_IFREG {
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrSpecial
 	}
-	identity, err := verifyLinuxFallbackIdentity(fd, root)
+	identity, err := verifyLinuxFallbackIdentity(fd, root, throughSymlink)
 	if err != nil {
-		_ = unix.Close(fd)
-		return 0, platformDir{}, platformFile{}, Identity{}, err
-	}
-	ancestryFD := parentFD
-	ancestryDepth := len(components) - 1
-	if mode == unix.S_IFDIR {
-		ancestryFD = fd
-		ancestryDepth = len(components)
-	}
-	if err := verifyLinuxFallbackAncestry(ancestryFD, ancestryDepth, root); err != nil {
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, err
 	}
@@ -190,97 +183,74 @@ func openLinuxFallbackSearchTarget(root platformRoot, path pathspec.Relative) (S
 	return SearchTargetRegular, platformDir{}, platformFile{fd: fd, valid: true}, identity, nil
 }
 
-func verifyLinuxFallbackAncestry(directoryFD, depth int, root platformRoot) error {
-	currentFD := directoryFD
-	owned := false
-	defer func() {
-		if owned {
-			_ = unix.Close(currentFD)
-		}
-	}()
-
-	for step := 0; step < depth; step++ {
-		parentFD, err := unix.Openat(currentFD, "..", linuxPathComponentFlags, 0)
-		if err != nil {
-			return classifyFallbackOpenError(err, true)
-		}
-		if owned {
-			_ = unix.Close(currentFD)
-		}
-		currentFD = parentFD
-		owned = true
-		mode, err := linuxFileMode(currentFD)
-		if err != nil {
-			return ErrIO
-		}
-		if mode != unix.S_IFDIR {
-			return ErrSourceChanged
-		}
-		if _, err := verifyLinuxFallbackIdentity(currentFD, root); err != nil {
-			return err
-		}
-	}
-
-	identity, err := verifyLinuxFallbackIdentity(currentFD, root)
-	if err != nil {
-		return err
-	}
-	if identity != root.identity {
-		return ErrSourceChanged
-	}
-	return nil
-}
-
-func openLinuxFallbackParent(root platformRoot, components []string) (int, string, error) {
+func openLinuxFallbackParent(root platformRoot, components []string) (int, string, bool, error) {
 	if len(components) == 0 {
-		return -1, "", ErrIO
+		return -1, "", false, ErrIO
 	}
 	parentFD, err := unix.FcntlInt(uintptr(root.fd), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
-		return -1, "", classifyFallbackOpenError(err, true)
+		return -1, "", false, classifyFallbackOpenError(err, true)
 	}
+	throughSymlink := false
 	for _, component := range components[:len(components)-1] {
-		childFD, openErr := unix.Openat(parentFD, component, linuxPathComponentFlags, 0)
+		childFD, openErr := unix.Openat(parentFD, component, linuxStrictPathComponentFlags, 0)
 		if openErr != nil {
 			_ = unix.Close(parentFD)
-			return -1, "", classifyFallbackOpenError(openErr, true)
+			return -1, "", false, classifyFallbackOpenError(openErr, true)
 		}
 		mode, modeErr := linuxFileMode(childFD)
 		if modeErr != nil {
 			_ = unix.Close(childFD)
 			_ = unix.Close(parentFD)
-			return -1, "", ErrIO
+			return -1, "", false, ErrIO
 		}
 		if mode == unix.S_IFLNK {
 			_ = unix.Close(childFD)
-			_ = unix.Close(parentFD)
-			return -1, "", ErrSymlink
+			childFD, openErr = unix.Openat(parentFD, component, linuxPathComponentFlags, 0)
+			if openErr != nil {
+				_ = unix.Close(parentFD)
+				return -1, "", false, classifyFallbackOpenError(openErr, true)
+			}
+			throughSymlink = true
+			if mode, modeErr = linuxFileMode(childFD); modeErr != nil {
+				_ = unix.Close(childFD)
+				_ = unix.Close(parentFD)
+				return -1, "", false, ErrIO
+			}
 		}
 		if mode != unix.S_IFDIR {
 			_ = unix.Close(childFD)
 			_ = unix.Close(parentFD)
-			return -1, "", ErrNotDirectory
+			return -1, "", false, ErrNotDirectory
 		}
-		if _, proofErr := verifyLinuxFallbackIdentity(childFD, root); proofErr != nil {
+		if _, proofErr := verifyLinuxFallbackIdentity(childFD, root, throughSymlink); proofErr != nil {
 			_ = unix.Close(childFD)
 			_ = unix.Close(parentFD)
-			return -1, "", proofErr
+			return -1, "", false, proofErr
 		}
 		_ = unix.Close(parentFD)
 		parentFD = childFD
 	}
-	return parentFD, components[len(components)-1], nil
+	return parentFD, components[len(components)-1], throughSymlink, nil
 }
 
-func verifyLinuxFallbackIdentity(fd int, root platformRoot) (Identity, error) {
+func verifyLinuxFallbackIdentity(fd int, root platformRoot, allowCrossMount bool) (Identity, error) {
 	identity, mountProof, err := linuxIdentityEvidence(fd)
 	if err != nil || !mountProof {
 		return Identity{}, ErrIO
 	}
-	if identity.Mount != root.mount {
+	if !allowCrossMount && identity.Mount != root.mount {
 		return Identity{}, ErrMountBoundary
 	}
 	return identity, nil
+}
+
+func linuxFallbackFinalIsSymlink(parentFD int, name string) (bool, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(parentFD, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return false, classifyFallbackOpenError(err, false)
+	}
+	return stat.Mode&unix.S_IFMT == unix.S_IFLNK, nil
 }
 
 func linuxFileMode(fd int) (uint32, error) {

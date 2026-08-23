@@ -56,7 +56,6 @@ type fuzzLine struct {
 	Number  uint64
 	Bytes   string
 	ByteLen uint64
-	TooLong bool
 }
 
 type fuzzSink struct {
@@ -68,7 +67,6 @@ func (sink *fuzzSink) Consume(line Line) error {
 		Number:  line.Number,
 		Bytes:   string(line.Bytes),
 		ByteLen: line.ByteLen,
-		TooLong: line.TooLong,
 	})
 	return nil
 }

@@ -147,7 +147,7 @@ func testLinuxIndependentRootStreams(t *testing.T, forceFallback, searchTarget b
 	}
 }
 
-func TestLinuxFallbackRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
+func TestLinuxFallbackUsesOwnedParentAfterMove(t *testing.T) {
 	parent := t.TempDir()
 	rootPath := filepath.Join(parent, "root")
 	outsidePath := filepath.Join(parent, "outside")
@@ -163,7 +163,7 @@ func TestLinuxFallbackRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	lease.handle.forceFallback = true
 	path := mustRelative(t, pathspec.POSIX, "a/b/file", false)
 	components := path.Components()
-	parentFD, finalName, err := openLinuxFallbackParent(lease.handle, components)
+	parentFD, finalName, throughSymlink, err := openLinuxFallbackParent(lease.handle, components)
 	if err != nil {
 		t.Fatalf("open fallback parent: %v", err)
 	}
@@ -175,14 +175,17 @@ func TestLinuxFallbackRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(moved, "b", "file"), []byte("outside"), 0o600); err != nil {
 		t.Fatalf("insert outside file: %v", err)
 	}
-	file, _, err := openLinuxFallbackRegularAt(lease.handle, parentFD, len(components)-1, finalName)
-	if file.valid {
+	file, _, err := openLinuxFallbackRegularAt(lease.handle, parentFD, finalName, throughSymlink)
+	if !file.valid || err != nil {
+		t.Fatalf("moved-parent final open = valid:%t error:%v", file.valid, err)
+	}
+	buffer := make([]byte, len("outside"))
+	read, readErr := unix.Read(file.fd, buffer)
+	if readErr != nil || read != len(buffer) || string(buffer) != "outside" {
 		_ = closePlatformFile(&file)
-		t.Fatal("moved parent exposed a regular file")
+		t.Fatalf("moved-parent read = %d, %v, %q", read, readErr, buffer)
 	}
-	if !errors.Is(err, ErrSourceChanged) {
-		t.Fatalf("moved-parent final open error = %v, want %v", err, ErrSourceChanged)
-	}
+	_ = closePlatformFile(&file)
 }
 
 func collectEntryNames(directory *Dir) ([]string, error) {

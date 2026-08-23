@@ -51,8 +51,6 @@ func errorGuidance(code api.ErrorCode) (string, string) {
 		return "file_encoding_is_not_supported", "convert_file_to_utf_8"
 	case api.ErrorUnsupportedLanguage:
 		return "outline_language_is_not_supported", "use_source_view_instead"
-	case api.ErrorLineTooLong:
-		return "line_exceeds_supported_size", "choose_another_file_or_reduce_generated_line_size"
 	case api.ErrorRecordExceedsBudget:
 		return "record_exceeds_page_budget", "increase_max_bytes_or_narrow_request"
 	case api.ErrorCursorExpired:

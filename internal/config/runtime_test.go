@@ -23,8 +23,6 @@ var (
 	_ uint64        = WarningExamplesPerCode
 	_ uint64        = WarningSummaryLineMaxBytes
 	_ uint64        = WarningSummaryMaxBytes
-	_ uint64        = SearchScanLineMaxBytes
-	_ uint64        = SourceLineMaxBytes
 	_ uint64        = RangeReadChunkMaxBytes
 	_ uint64        = ReadMaxItems
 	_ uint64        = Runtime{}.ScanMaxBytes
@@ -55,8 +53,6 @@ func TestCompileTimeLimits(t *testing.T) {
 		{name: "warning examples per code", got: WarningExamplesPerCode, want: 1},
 		{name: "warning summary line bytes", got: WarningSummaryLineMaxBytes, want: 128},
 		{name: "warning summary bytes", got: WarningSummaryMaxBytes, want: 1_536},
-		{name: "search scan line bytes", got: SearchScanLineMaxBytes, want: 4_096},
-		{name: "source line bytes", got: SourceLineMaxBytes, want: 4_096},
 		{name: "range read chunk bytes", got: RangeReadChunkMaxBytes, want: 4_096},
 		{name: "read items", got: ReadMaxItems, want: 24},
 	} {

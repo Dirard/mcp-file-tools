@@ -85,11 +85,22 @@ func duplicatePlatformRoot(handle platformRoot) (platformRoot, error) {
 }
 
 const (
-	linuxResolvePolicy     = unix.RESOLVE_BENEATH | unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV
+	linuxStrictResolve     = unix.RESOLVE_NO_MAGICLINKS | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV
+	linuxSymlinkResolve    = unix.RESOLVE_NO_MAGICLINKS
 	linuxDirectoryFlags    = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC
-	linuxRegularFileFlags  = unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
+	linuxRegularFileFlags  = unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NONBLOCK
 	linuxSearchTargetFlags = linuxRegularFileFlags
 )
+
+func openLinuxFollowing(root platformRoot, path string, flags int) (int, error) {
+	how := unix.OpenHow{Flags: uint64(flags), Resolve: uint64(linuxStrictResolve)}
+	fd, err := unix.Openat2(root.fd, path, &how)
+	if errors.Is(err, unix.ELOOP) {
+		how.Resolve = uint64(linuxSymlinkResolve)
+		return unix.Openat2(root.fd, path, &how)
+	}
+	return fd, err
+}
 
 func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Identity, error) {
 	if !root.valid {
@@ -101,11 +112,7 @@ func openPlatformDir(root platformRoot, path pathspec.Relative) (platformDir, Id
 	if root.forceFallback {
 		return openLinuxFallbackDir(root, path)
 	}
-	how := unix.OpenHow{
-		Flags:   uint64(linuxDirectoryFlags),
-		Resolve: uint64(linuxResolvePolicy),
-	}
-	fd, err := unix.Openat2(root.fd, path.String(), &how)
+	fd, err := openLinuxFollowing(root, path.String(), linuxDirectoryFlags)
 	if err != nil {
 		if errors.Is(err, unix.ENOSYS) {
 			return openLinuxFallbackDir(root, path)
@@ -131,11 +138,7 @@ func openPlatformRegular(root platformRoot, path pathspec.Relative) (platformFil
 	if root.forceFallback {
 		return openLinuxFallbackRegular(root, path)
 	}
-	how := unix.OpenHow{
-		Flags:   uint64(linuxRegularFileFlags),
-		Resolve: uint64(linuxResolvePolicy),
-	}
-	fd, err := unix.Openat2(root.fd, path.String(), &how)
+	fd, err := openLinuxFollowing(root, path.String(), linuxRegularFileFlags)
 	if err != nil {
 		if errors.Is(err, unix.ENOSYS) {
 			return openLinuxFallbackRegular(root, path)
@@ -173,11 +176,7 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 	if root.forceFallback {
 		return openLinuxFallbackSearchTarget(root, path)
 	}
-	how := unix.OpenHow{
-		Flags:   uint64(linuxSearchTargetFlags),
-		Resolve: uint64(linuxResolvePolicy),
-	}
-	fd, err := unix.Openat2(root.fd, path.String(), &how)
+	fd, err := openLinuxFollowing(root, path.String(), linuxSearchTargetFlags)
 	if err != nil {
 		if errors.Is(err, unix.ENOSYS) {
 			return openLinuxFallbackSearchTarget(root, path)
@@ -188,10 +187,6 @@ func openPlatformSearchTarget(root platformRoot, path pathspec.Relative) (Search
 	if err != nil {
 		_ = unix.Close(fd)
 		return 0, platformDir{}, platformFile{}, Identity{}, ErrIO
-	}
-	if mode == unix.S_IFLNK {
-		_ = unix.Close(fd)
-		return 0, platformDir{}, platformFile{}, Identity{}, ErrSymlink
 	}
 	if mode != unix.S_IFDIR && mode != unix.S_IFREG {
 		_ = unix.Close(fd)

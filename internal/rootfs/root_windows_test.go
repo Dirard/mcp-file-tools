@@ -134,7 +134,7 @@ func TestWindowsRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	defer lease.Close()
 	path := mustWindowsRelative(t, "a/b/file", false)
 	components := path.Components()
-	parentHandle, _, err := openWindowsParent(lease.handle, components)
+	parentHandle, _, throughSymlink, err := openWindowsParent(lease.handle, components)
 	if err != nil {
 		t.Fatalf("open parent: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestWindowsRejectsParentMovedOutsideBeforeFinalOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(moved, "b", "file"), []byte("outside"), 0o600); err != nil {
 		t.Fatalf("insert outside file: %v", err)
 	}
-	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, components[len(components)-1])
+	file, _, _, err := openWindowsRegularAt(lease.handle, parentHandle, components[len(components)-1], throughSymlink)
 	if file.valid {
 		_ = closePlatformFile(&file)
 		t.Fatal("moved parent exposed a regular file")
@@ -346,7 +346,7 @@ func TestWindowsDuplicateSurvivesOriginalCloseAndHandleReuse(t *testing.T) {
 	}
 }
 
-func TestWindowsRejectsSymlinkJunctionAndVolumeBoundaries(t *testing.T) {
+func TestWindowsFollowsSymlinkAndRejectsJunctionBoundaries(t *testing.T) {
 	rootPath := t.TempDir()
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "file"), []byte("outside"), 0o600); err != nil {
@@ -361,8 +361,13 @@ func TestWindowsRejectsSymlinkJunctionAndVolumeBoundaries(t *testing.T) {
 		if err := os.Symlink(filepath.Join(outside, "file"), link); err != nil {
 			t.Skipf("file symlink unavailable: %v", err)
 		}
-		if file, err := lease.OpenRegular(mustWindowsRelative(t, "file-link", false)); !errors.Is(err, ErrSymlink) || file != nil {
-			t.Fatalf("OpenRegular(file-link) = file %v, error %v", file, err)
+		file, err := lease.OpenRegular(mustWindowsRelative(t, "file-link", false))
+		if err != nil {
+			t.Fatalf("OpenRegular(file-link) = %v", err)
+		}
+		defer file.Close()
+		if got := readWindowsRootFSFile(t, file); got != "outside" {
+			t.Fatalf("file symlink content = %q", got)
 		}
 	})
 
@@ -371,8 +376,13 @@ func TestWindowsRejectsSymlinkJunctionAndVolumeBoundaries(t *testing.T) {
 		if err := os.Symlink(outside, link); err != nil {
 			t.Skipf("directory symlink unavailable: %v", err)
 		}
-		if file, err := lease.OpenRegular(mustWindowsRelative(t, "directory-link/file", false)); !errors.Is(err, ErrSymlink) || file != nil {
-			t.Fatalf("OpenRegular(directory-link/file) = file %v, error %v", file, err)
+		file, err := lease.OpenRegular(mustWindowsRelative(t, "directory-link/file", false))
+		if err != nil {
+			t.Fatalf("OpenRegular(directory-link/file) = %v", err)
+		}
+		defer file.Close()
+		if got := readWindowsRootFSFile(t, file); got != "outside" {
+			t.Fatalf("directory symlink content = %q", got)
 		}
 	})
 

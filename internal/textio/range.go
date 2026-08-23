@@ -38,9 +38,6 @@ func (sink *RangeSink) Consume(line Line) error {
 	if line.Number < sink.start || line.Number > sink.end {
 		return nil
 	}
-	if line.TooLong {
-		return sinkCodeError{code: api.ErrorLineTooLong}
-	}
 	if !sink.appendLine(uint32(line.Number), line.Bytes) {
 		return sinkCodeError{code: api.ErrorBudgetExceeded}
 	}
